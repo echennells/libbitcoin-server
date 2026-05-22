@@ -54,7 +54,8 @@ BOOST_AUTO_TEST_CASE(native__top__xml__not_acceptable)
 
 BOOST_AUTO_TEST_CASE(native__top__default__not_acceptable)
 {
-    const auto status = get_status("/v1/top?format=xml");
+    // No format query and no Accept header: native_query fails -> 406.
+    const auto status = get_status("/v1/top");
     BOOST_REQUIRE_EQUAL(status, http::status::not_acceptable);
 }
 
@@ -158,6 +159,43 @@ BOOST_AUTO_TEST_CASE(native__ws_top_subscribe__progressive_notify__expected)
     notify(node::chase::organized, node::header_t{ 11 });
 
     BOOST_REQUIRE_EQUAL(to_string(ws_receive()), "0b");
+}
+
+// Characterizes bug C1 on the websocket NOTIFICATION path (ECH-33 reach).
+// do_block emits notify_json(value_from(encode_base16(hash)), two * hash_size):
+// a 64-char hash quoted to a 66-byte JSON string, against a 64-byte size hint
+// (two * hash_size omits the two JSON quote characters). channel_http::notify
+// routes through the same write -> async_write_http -> socket::body_write path
+// as a normal send (socket.cpp:436) -- it is literally the same function, not a
+// parallel one -- so the notification fragments by the identical C1 mechanism:
+// body_write loops writer.get() and async_write's each size_hint-sized chunk,
+// and each websocket async_write is a complete FIN message. The notification is
+// delivered as a 64-byte message plus a 2-byte message; a subscriber reading
+// one message per notification gets an unparseable JSON fragment. This pins the
+// current buggy framing; a fix to the ws write path will trip it (then assert
+// one 66-byte message). notify_text / notify_chunk are single-shot, unaffected.
+BOOST_AUTO_TEST_CASE(native__ws_block_subscribe__notify_json__fragmented_bug_c1)
+{
+    BOOST_REQUIRE(!ws_upgrade());
+
+    BOOST_REQUIRE(query_.set(test::bogus_block10,
+        database::context{ 0, 10, 0 }, false, false));
+    BOOST_REQUIRE(query_.set(test::bogus_block11,
+        database::context{ 0, 11, 0 }, false, false));
+
+    // Register a json block subscription. The initial subscribe response is the
+    // top hash and is itself C1-fragmented (send_json, same two * hash_size
+    // hint); drain its two fragments (64 + 2) before driving the notification.
+    BOOST_REQUIRE_EQUAL(
+        ws_get_data("/v1/block/subscribe?format=json").size(), 64u);
+    BOOST_REQUIRE_EQUAL(ws_receive().size(), 2u);
+
+    // Fire the chase event that drives do_block -> notify_json.
+    notify(node::chase::organized, node::header_t{ 11 });
+
+    // BUG C1: the single logical notification arrives as two ws messages.
+    BOOST_REQUIRE_EQUAL(ws_receive().size(), 64u);
+    BOOST_REQUIRE_EQUAL(ws_receive().size(), 2u);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
