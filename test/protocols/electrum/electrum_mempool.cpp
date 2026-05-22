@@ -59,6 +59,20 @@ BOOST_AUTO_TEST_CASE(electrum__mempool_get_fee_histogram__extra_param__dropped)
 ////    BOOST_REQUIRE_EQUAL(result, not_implemented.value());
 ////}
 
+// get_fee_histogram on v1.2+ with valid params currently returns an empty array
+// -- the handler has a TODO to simulate it from block fees and presently does
+// send_result(array_t{}). This supersedes the commented-out __not_implemented__
+// case above, which predates the change away from send_code(not_implemented);
+// the success path had no live coverage.
+BOOST_AUTO_TEST_CASE(electrum__mempool_get_fee_histogram__empty_params__empty_array)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_2));
+
+    const auto response = get(R"({"id":603,"method":"mempool.get_fee_histogram","params":[]})" "\n");
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_array());
+    BOOST_REQUIRE(response.at("result").as_array().empty());
+}
+
 // mempool.get_info
 
 BOOST_AUTO_TEST_CASE(electrum__mempool_get_info__insufficient_version__wrong_version)

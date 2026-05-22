@@ -274,7 +274,10 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_get_mempool__confirmed_and_
     const auto& tx2 = history.at(1).as_object();
     REQUIRE_NO_THROW_TRUE(tx2.at("height").is_int64());
     REQUIRE_NO_THROW_TRUE(tx2.at("tx_hash").is_string());
-    BOOST_REQUIRE_EQUAL(tx1.at("fee").as_int64(), floored_subtract(5'000'000'000 + 5'000'000'000, 0x10 + 0x11 + 0x12 + 0x13 + 0x14));
+    // Corrected copy-paste dud (was a verbatim re-check of tx1.fee, leaving
+    // tx2.fee unverified): tx2 is bogus_block12's tx -- the same tx as
+    // get_history's third entry above, fee = outputs (0x10 + 0x11) less 0x0a.
+    BOOST_REQUIRE_EQUAL(tx2.at("fee").as_int64(), floored_subtract(0x10 + 0x11, 0x0a));
     BOOST_REQUIRE_EQUAL(tx2.at("height").as_int64(), -1); // not rooted
     BOOST_REQUIRE_EQUAL(tx2.at("tx_hash").as_string(), encode_hash(hash2));
 }
