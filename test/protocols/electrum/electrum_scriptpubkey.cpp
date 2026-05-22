@@ -192,7 +192,10 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scriptpubkey_get_history__confirmed_an
     const auto& tx3 = history.at(2).as_object();
     REQUIRE_NO_THROW_TRUE(tx3.at("height").is_int64());
     REQUIRE_NO_THROW_TRUE(tx3.at("tx_hash").is_string());
-    BOOST_REQUIRE_EQUAL(tx2.at("fee").as_int64(), floored_subtract(5'000'000'000 + 5'000'000'000, 0x10 + 0x11 + 0x12 + 0x13 + 0x14));
+    // Corrected copy-paste dud (was a verbatim re-check of tx2.fee, leaving
+    // tx3.fee unverified): tx3 is bogus_block12's tx, fee = its outputs
+    // (0x10 + 0x11) less the 0x0a it pays -- as in the scripthash get_history test.
+    BOOST_REQUIRE_EQUAL(tx3.at("fee").as_int64(), floored_subtract(0x10 + 0x11, 0x0a));
     BOOST_REQUIRE_EQUAL(tx3.at("height").as_int64(), -1); // not rooted
     BOOST_REQUIRE_EQUAL(tx3.at("tx_hash").as_string(), encode_hash(hash3));
 }
@@ -267,6 +270,7 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scriptpubkey_get_mempool__confirmed_an
     REQUIRE_NO_THROW_TRUE(tx1.at("height").is_int64());
     REQUIRE_NO_THROW_TRUE(tx1.at("tx_hash").is_string());
     BOOST_REQUIRE_EQUAL(tx1.at("fee").as_int64(), floored_subtract(5'000'000'000 + 5'000'000'000, 0x10 + 0x11 + 0x12 + 0x13 + 0x14));
+    BOOST_REQUIRE_EQUAL(tx1.at("height").as_int64(), 0); // rooted (height value was unverified)
     BOOST_REQUIRE_EQUAL(tx1.at("tx_hash").as_string(), encode_hash(hash1));
 
     const auto hash2 = test::bogus_block12.transactions_ptr()->at(0)->hash(false);
