@@ -89,6 +89,7 @@ test_libbitcoin_server_test_SOURCES = \
     test/parsers/bitcoind_query.cpp \
     test/parsers/bitcoind_target.cpp \
     test/parsers/electrum_version.cpp \
+    test/parsers/native_fuzz.cpp \
     test/parsers/native_query.cpp \
     test/parsers/native_target.cpp \
     test/protocols/blocks.cpp \
