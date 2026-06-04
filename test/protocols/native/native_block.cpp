@@ -160,4 +160,48 @@ BOOST_AUTO_TEST_CASE(native__ws_top_subscribe__progressive_notify__expected)
     BOOST_REQUIRE_EQUAL(to_string(ws_receive()), "0b");
 }
 
+// ECH-52 regression tests (reorganized event handling)
+// ----------------------------------------------------------------------------
+
+// CASE A (contract guard, never throws): the chase::reorganized payload that
+// chaser_confirm::set_reorganized posts is a header_t (header_link::integer),
+// NOT a height_t. handle_chase must therefore extract std::get<node::header_t>.
+// Uses std::get_if (non-throwing), so this case is safe to run pre-fix.
+BOOST_AUTO_TEST_CASE(native__reorganized_event__payload_is_header_t__not_height_t)
+{
+    const node::event_value value{ node::header_t{ 11u } };
+    BOOST_REQUIRE(std::get_if<node::header_t>(&value) != nullptr);
+    BOOST_REQUIRE(std::get_if<node::height_t>(&value) == nullptr);
+}
+
+// CASE B (behavioral regression, fix-locking): drives the real reorganized path
+// end-to-end through the running server. chase::reorganized carries a header_t,
+// exactly as chaser_confirm::set_reorganized posts it. Pre-ECH-52-fix, handle_chase
+// does std::get<node::height_t> on this header_t-holding variant ->
+// std::bad_variant_access in a NOEXCEPT fn on the node strand -> std::terminate
+// (the suite reports SIGABRT for this case). Post-fix (std::get<node::header_t>),
+// do_top emits the fork-point height. Mirrors the organized sibling
+// native__ws_top_subscribe__progressive_notify__expected exactly.
+BOOST_AUTO_TEST_CASE(native__ws_top_subscribe__reorganized__emits_fork_height)
+{
+    BOOST_REQUIRE(!ws_upgrade());
+
+    BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, false, false));
+    BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, false, false));
+    BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, false, false));
+
+    const auto response = ws_get_json("/v1/top/subscribe?format=json");
+    BOOST_REQUIRE(response.is_int64());
+    BOOST_REQUIRE_EQUAL(response.as_int64(), 9);
+
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block10.hash()), true));
+    BOOST_REQUIRE_EQUAL(ws_get_text("/v1/top/subscribe?format=text"), "0a");
+
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block11.hash()), true));
+    notify(node::chase::reorganized, node::header_t{ 11 });
+
+    BOOST_REQUIRE_EQUAL(to_string(ws_receive()), "0b");
+}
+
+
 BOOST_AUTO_TEST_SUITE_END()
