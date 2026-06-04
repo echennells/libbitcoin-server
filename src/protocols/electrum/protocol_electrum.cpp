@@ -195,8 +195,11 @@ void protocol_electrum::do_reorganized(node::header_t) NOEXCEPT
 
     for (auto& [key, sub]: address_subscriptions_)
     {
-        // Flush resets hash accumulator, sub.type remains unchanged.
-        sub.accumulator.flush();
+        // Reset (not flush) the hash accumulator to its initial (IV) state so the
+        // next history scan rebuilds the confirmed midstate from scratch. flush()
+        // finalizes/pads in place (non-destructive), leaving a non-IV state and
+        // non-zero size that would poison re-accumulation. sub.type unchanged.
+        sub.accumulator.reset();
         sub.status = {};
         sub.cursor = {};
     }

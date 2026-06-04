@@ -862,4 +862,71 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scriptpubkey_unsubscribe__subscribed__
     REQUIRE_NO_THROW_TRUE(response2.at("result").as_bool());
 }
 
+// ECH-51: do_reorganized must reset() (not flush()) each subscription's hash
+// accumulator. flush() finalizes/pads the accumulator in place (its own header
+// says "Flush does not reset the accumulator"), leaving a non-IV state and a
+// non-zero size; do_reorganized also clears the cursor, forcing the next
+// confirmed-history scan to rebuild the midstate from height 0. With a flush()ed
+// accumulator that rebuild is layered on poisoned state, so the recomputed
+// Electrum status hash no longer equals sha256("<tx>:<height>:"...). Electrum
+// clients key history re-fetch on status equality, so a wrong-but-stable hash
+// silently diverges a wallet's view from the chain.
+//
+// Mirrors electrum__blockchain_scripthash_subscribe__progressive_notify__expected
+// (same notification strand / push path): notify(reorganized) then notify(organized)
+// both flow through handle_chase FIFO, so do_reorganized runs before do_scripthash.
+//   reset() (fix): clean re-fold -> pushed status == golden (GREEN).
+//   flush() (bug): poisoned re-fold -> pushed status != golden (RED).
+BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__reorganized_notify__status_recomputed_clean)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_1));
+
+    BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, false, false));
+    BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, false, false));
+    BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, false, false));
+    const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
+    const auto hash11 = test::mock_block11.transactions_ptr()->at(0)->hash(false);
+    const auto hash12 = test::mock_block12.transactions_ptr()->at(0)->hash(false);
+
+    // Confirm all three blocks, then subscribe over the fully-confirmed history.
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block10.hash()), true));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block11.hash()), true));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block12.hash()), true));
+
+    const auto expected_confirmed = encode_base16(sha256_hash
+    (
+        encode_hash(hash10) + ":10:" +
+        encode_hash(hash11) + ":11:" +
+        encode_hash(hash12) + ":12:"
+    ));
+
+    const auto request = R"({"id":1101,"method":"blockchain.scripthash.subscribe","params":["%1%"]})" "\n";
+    const auto response1 = get((boost::format(request) % found_scripthash).str());
+    REQUIRE_NO_THROW_TRUE(response1.at("result").is_string());
+    BOOST_REQUIRE_EQUAL(response1.at("result").as_string(), expected_confirmed);
+
+    // Reorg: do_reorganized clears cursor/status and (must) reset() the
+    // accumulator. It emits nothing; the corruption surfaces on the next event.
+    notify(node::chase::reorganized);
+
+    // Organized: do_scripthash re-scans confirmed history from a cleared cursor
+    // and re-folds it into sub.accumulator. The history is unchanged, so a clean
+    // (reset) accumulator reproduces expected_confirmed; a flush()ed one cannot.
+    notify(node::chase::organized);
+
+    const auto notification = receive();
+    REQUIRE_NO_THROW_TRUE(notification.at("method").is_string());
+    REQUIRE_NO_THROW_TRUE(notification.at("params").is_array());
+    BOOST_REQUIRE_EQUAL(notification.at("method").as_string(), "blockchain.scripthash.subscribe");
+
+    const auto& params = notification.at("params").as_array();
+    BOOST_REQUIRE_EQUAL(params.size(), 2u);
+    BOOST_REQUIRE(params.at(0).is_string());
+    BOOST_REQUIRE(params.at(1).is_string());
+    BOOST_REQUIRE_EQUAL(params.at(0).as_string(), found_scripthash);
+
+    // RED with flush() (bug); GREEN with reset() (fix).
+    BOOST_REQUIRE_EQUAL(params.at(1).as_string(), expected_confirmed);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
