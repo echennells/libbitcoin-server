@@ -184,10 +184,17 @@ bool protocol_bitcoind_rpc::handle_get_best_block_hash(const code& ec,
 
 bool protocol_bitcoind_rpc::handle_get_block(const code& ec,
     rpc_interface::get_block, const std::string& blockhash,
-    double verbosity) NOEXCEPT
+    const network::rpc::value_t& verbosity_value) NOEXCEPT
 {
     if (stopped(ec))
         return false;
+
+    double verbosity{};
+    if (!parse_verbosity(verbosity, verbosity_value, 1.0))
+    {
+        send_error(error::invalid_argument);
+        return true;
+    }
 
     hash_digest hash{};
     if (!decode_hash(hash, blockhash))
@@ -568,10 +575,17 @@ bool protocol_bitcoind_rpc::handle_get_network_info(const code& ec,
 
 bool protocol_bitcoind_rpc::handle_get_raw_transaction(const code& ec,
     rpc_interface::get_raw_transaction, const std::string& txid,
-    double verbose, const std::string&) NOEXCEPT
+    const network::rpc::value_t& verbosity_value, const std::string&) NOEXCEPT
 {
     if (stopped(ec))
         return false;
+
+    double verbose{};
+    if (!parse_verbosity(verbose, verbosity_value, 0.0))
+    {
+        send_error(error::invalid_argument);
+        return true;
+    }
 
     // The blockhash hint is unused: libbitcoin archives all tx (global index).
     hash_digest hash{};

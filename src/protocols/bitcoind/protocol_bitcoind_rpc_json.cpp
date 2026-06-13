@@ -18,6 +18,8 @@
  */
 #include <bitcoin/server/protocols/protocol_bitcoind_rpc.hpp>
 
+#include <variant>
+#include <vector>
 #include <bitcoin/server/define.hpp>
 
 namespace libbitcoin {
@@ -30,6 +32,27 @@ uint32_t protocol_bitcoind_rpc::median_time_past(const node::query& query,
 {
     chain::context ctx{};
     return query.get_context(ctx, link) ? ctx.median_time_past : 0_u32;
+}
+
+// bitcoind accepts boolean or number for the getblock/getrawtransaction
+// verbosity parameters (both were originally boolean and remain so in
+// common clients), so a typed number subscription cannot match them.
+bool protocol_bitcoind_rpc::parse_verbosity(double& verbosity,
+    const network::rpc::value_t& value, double missing) NOEXCEPT
+{
+    using namespace network::rpc;
+    const auto& inner = value.value();
+
+    if (std::holds_alternative<null_t>(inner))
+        verbosity = missing;
+    else if (std::holds_alternative<boolean_t>(inner))
+        verbosity = std::get<boolean_t>(inner) ? 1.0 : 0.0;
+    else if (std::holds_alternative<number_t>(inner))
+        verbosity = std::get<number_t>(inner);
+    else
+        return false;
+
+    return true;
 }
 
 void protocol_bitcoind_rpc::inject_block_context(boost::json::object& out,

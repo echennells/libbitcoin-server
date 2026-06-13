@@ -32,6 +32,7 @@ struct json
   : server::protocol_bitcoind_rpc
 {
     using protocol_bitcoind_rpc::median_time_past;
+    using protocol_bitcoind_rpc::parse_verbosity;
     using protocol_bitcoind_rpc::inject_block_context;
     using protocol_bitcoind_rpc::inject_tx_context;
     using protocol_bitcoind_rpc::header_to_bitcoind;
@@ -58,6 +59,50 @@ BOOST_AUTO_TEST_CASE(bitcoind_json__header_to_bitcoind__block1_header__maps_fiel
     BOOST_REQUIRE(out.at("difficulty").is_number());
     BOOST_REQUIRE(!out.contains("height"));
     BOOST_REQUIRE(!out.contains("confirmations"));
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+// parse_verbosity
+// ----------------------------------------------------------------------------
+
+BOOST_AUTO_TEST_SUITE(bitcoind_parse_verbosity_tests)
+
+using rpc_value_t = network::rpc::value_t;
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__parse_verbosity__missing__defaulted)
+{
+    double verbosity{};
+    BOOST_REQUIRE(json::parse_verbosity(verbosity, rpc_value_t{}, 42.0));
+    BOOST_REQUIRE_EQUAL(verbosity, 42.0);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__parse_verbosity__boolean_true__one)
+{
+    double verbosity{};
+    BOOST_REQUIRE(json::parse_verbosity(verbosity, rpc_value_t{ true }, 0.0));
+    BOOST_REQUIRE_EQUAL(verbosity, 1.0);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__parse_verbosity__boolean_false__zero)
+{
+    double verbosity{};
+    BOOST_REQUIRE(json::parse_verbosity(verbosity, rpc_value_t{ false }, 1.0));
+    BOOST_REQUIRE_EQUAL(verbosity, 0.0);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__parse_verbosity__number__passed_through)
+{
+    double verbosity{};
+    BOOST_REQUIRE(json::parse_verbosity(verbosity, rpc_value_t{ 2.0 }, 0.0));
+    BOOST_REQUIRE_EQUAL(verbosity, 2.0);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__parse_verbosity__string__false)
+{
+    double verbosity{};
+    const network::rpc::string_t value{ "1" };
+    BOOST_REQUIRE(!json::parse_verbosity(verbosity, rpc_value_t{ value }, 0.0));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

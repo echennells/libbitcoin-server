@@ -66,7 +66,7 @@ protected:
         rpc_interface::get_best_block_hash) NOEXCEPT;
     bool handle_get_block(const code& ec,
         rpc_interface::get_block, const std::string&,
-        double verbosity) NOEXCEPT;
+        const network::rpc::value_t& verbosity) NOEXCEPT;
     bool handle_get_block_chain_info(const code& ec,
         rpc_interface::get_block_chain_info) NOEXCEPT;
     bool handle_get_block_count(const code& ec,
@@ -105,7 +105,8 @@ protected:
         rpc_interface::get_network_info) NOEXCEPT;
     bool handle_get_raw_transaction(const code& ec,
         rpc_interface::get_raw_transaction, const std::string& txid,
-        double verbose, const std::string& blockhash) NOEXCEPT;
+        const network::rpc::value_t& verbosity,
+        const std::string& blockhash) NOEXCEPT;
     bool handle_send_raw_transaction(const code& ec,
         rpc_interface::send_raw_transaction, const std::string& hexstring,
         double maxfeerate) NOEXCEPT;
@@ -113,6 +114,8 @@ protected:
     /// Json context helpers (shared with rest, defined in *_json.cpp).
     static uint32_t median_time_past(const node::query& query,
         const database::header_link& link) NOEXCEPT;
+    static bool parse_verbosity(double& verbosity,
+        const network::rpc::value_t& value, double missing) NOEXCEPT;
     static void inject_block_context(boost::json::object& out,
         const node::query& query, const database::header_link& link,
         const system::chain::header& header) NOEXCEPT;
