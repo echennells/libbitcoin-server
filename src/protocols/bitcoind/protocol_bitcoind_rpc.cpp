@@ -547,7 +547,9 @@ bool protocol_bitcoind_rpc::handle_get_network_info(const code& ec,
     // peer-dependent fields (connections, addresses) are reported as empty.
     send_result(object_t
     {
-        { "version", 0 },
+        // Clients reject a version below 190000 as a legacy daemon.
+        // TODO: derive the reported bitcoind version from settings.
+        { "version", 280000 },
         { "subversion", network_settings().user_agent },
         { "protocolversion", 70016 },
 

@@ -28,6 +28,9 @@ const auto block1 = encode_hash(test::block1_hash);
 const auto block5 = encode_hash(test::block5_hash);
 const auto block9 = encode_hash(test::block9_hash);
 
+// Typed clients treat a version below this as a legacy daemon.
+constexpr int64_t minimum_client_version = 190000;
+
 std::string hash_param(const hash_digest& hash) NOEXCEPT
 {
     return "[\"" + encode_hash(hash) + "\"]";
@@ -181,7 +184,8 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__getnetworkinfo__fields)
 {
     const auto response = rpc("getnetworkinfo");
     const auto& result = response.at("result");
-    BOOST_REQUIRE(result.as_object().contains("version"));
+    BOOST_REQUIRE(result.at("version").is_int64());
+    BOOST_REQUIRE_GE(result.at("version").as_int64(), minimum_client_version);
     BOOST_REQUIRE(result.at("subversion").is_string());
     BOOST_REQUIRE(result.as_object().contains("protocolversion"));
     BOOST_REQUIRE(result.at("localservices").is_string());
