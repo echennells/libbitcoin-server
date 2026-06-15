@@ -548,8 +548,12 @@ bool protocol_bitcoind_rpc::handle_get_network_info(const code& ec,
     send_result(object_t
     {
         { "version", 0 },
-        { "subversion", std::string{ "/libbitcoin:server/" } },
+        { "subversion", network_settings().user_agent },
         { "protocolversion", 70016 },
+
+        // Services advertised to peers (version handshake).
+        { "localservices", encode_base16(to_big_endian(
+            network_settings().services_maximum)) },
         { "localrelay", true },
         { "timeoffset", 0 },
         { "connections", 0 },

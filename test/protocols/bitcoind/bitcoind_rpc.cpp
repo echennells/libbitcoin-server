@@ -184,7 +184,22 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__getnetworkinfo__fields)
     BOOST_REQUIRE(result.as_object().contains("version"));
     BOOST_REQUIRE(result.at("subversion").is_string());
     BOOST_REQUIRE(result.as_object().contains("protocolversion"));
+    BOOST_REQUIRE(result.at("localservices").is_string());
     BOOST_REQUIRE(result.at("networks").is_array());
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getnetworkinfo__subversion__reflects_user_agent)
+{
+    const auto response = rpc("getnetworkinfo");
+    const auto& result = response.at("result");
+    BOOST_REQUIRE_EQUAL(as_text(result.at("subversion")), config_.network.user_agent);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getnetworkinfo__localservices__reflects_services)
+{
+    const auto response = rpc("getnetworkinfo");
+    const auto& result = response.at("result");
+    BOOST_REQUIRE_EQUAL(as_text(result.at("localservices")), encode_base16(to_big_endian(config_.network.services_maximum)));
 }
 
 // not implemented (structured not_implemented error)
