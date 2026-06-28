@@ -33,11 +33,20 @@ struct json
 {
     using protocol_bitcoind_rpc::median_time_past;
     using protocol_bitcoind_rpc::parse_verbosity;
+    using protocol_bitcoind_rpc::to_chain_work;
     using protocol_bitcoind_rpc::inject_block_context;
     using protocol_bitcoind_rpc::inject_tx_context;
     using protocol_bitcoind_rpc::header_to_bitcoind;
     using protocol_bitcoind_rpc::chain_name;
 };
+
+// Cumulative chain work to genesis/tip, encoded as bitcoind serializes it.
+constexpr auto genesis_chain_work =
+    "0000000000000000000000000000000000000000000000000000000100010001";
+constexpr auto block5_chain_work =
+    "0000000000000000000000000000000000000000000000000000000600060006";
+constexpr auto tip_chain_work =
+    "0000000000000000000000000000000000000000000000000000000a000a000a";
 
 // header_to_bitcoind
 // ----------------------------------------------------------------------------
@@ -179,13 +188,14 @@ BOOST_AUTO_TEST_CASE(bitcoind_json__inject_block_context__middle__height_confirm
     BOOST_REQUIRE(header);
 
     boost::json::object out{};
-    json::inject_block_context(out, query_, link, *header);
+    json::inject_block_context(out, query_, config_.bitcoin, link, *header);
 
     chain::context ctx{};
     BOOST_REQUIRE(query_.get_context(ctx, link));
     BOOST_REQUIRE_EQUAL(out.at("height").to_number<uint64_t>(), 5u);
     BOOST_REQUIRE_EQUAL(out.at("confirmations").to_number<int64_t>(), 5);
     BOOST_REQUIRE_EQUAL(out.at("mediantime").to_number<uint32_t>(), ctx.median_time_past);
+    BOOST_REQUIRE_EQUAL(as_text(out.at("chainwork")), block5_chain_work);
     BOOST_REQUIRE_EQUAL(as_text(out.at("previousblockhash")), encode_hash(test::block4_hash));
     BOOST_REQUIRE_EQUAL(as_text(out.at("nextblockhash")), encode_hash(test::block6_hash));
 }
@@ -197,10 +207,11 @@ BOOST_AUTO_TEST_CASE(bitcoind_json__inject_block_context__genesis__no_previous)
     BOOST_REQUIRE(header);
 
     boost::json::object out{};
-    json::inject_block_context(out, query_, link, *header);
+    json::inject_block_context(out, query_, config_.bitcoin, link, *header);
 
     BOOST_REQUIRE_EQUAL(out.at("height").to_number<uint64_t>(), 0u);
     BOOST_REQUIRE_EQUAL(out.at("confirmations").to_number<int64_t>(), 10);
+    BOOST_REQUIRE_EQUAL(as_text(out.at("chainwork")), genesis_chain_work);
     BOOST_REQUIRE(!out.contains("previousblockhash"));
     BOOST_REQUIRE_EQUAL(as_text(out.at("nextblockhash")), encode_hash(test::block1_hash));
 }
@@ -212,12 +223,35 @@ BOOST_AUTO_TEST_CASE(bitcoind_json__inject_block_context__tip__no_next)
     BOOST_REQUIRE(header);
 
     boost::json::object out{};
-    json::inject_block_context(out, query_, link, *header);
+    json::inject_block_context(out, query_, config_.bitcoin, link, *header);
 
     BOOST_REQUIRE_EQUAL(out.at("height").to_number<uint64_t>(), 9u);
     BOOST_REQUIRE_EQUAL(out.at("confirmations").to_number<int64_t>(), 1);
+    BOOST_REQUIRE_EQUAL(as_text(out.at("chainwork")), tip_chain_work);
     BOOST_REQUIRE_EQUAL(as_text(out.at("previousblockhash")), encode_hash(test::block8_hash));
     BOOST_REQUIRE(!out.contains("nextblockhash"));
+}
+
+// to_chain_work
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__to_chain_work__genesis__genesis_proof)
+{
+    const auto work = json::to_chain_work(query_, config_.bitcoin, test::block0_hash);
+    BOOST_REQUIRE_EQUAL(work, genesis_chain_work);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__to_chain_work__unknown_hash__empty)
+{
+    const auto work = json::to_chain_work(query_, config_.bitcoin, system::null_hash);
+    BOOST_REQUIRE(work.empty());
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__to_chain_work__repeated__cached_value_consistent)
+{
+    const auto first = json::to_chain_work(query_, config_.bitcoin, test::block9_hash);
+    const auto second = json::to_chain_work(query_, config_.bitcoin, test::block9_hash);
+    BOOST_REQUIRE_EQUAL(first, tip_chain_work);
+    BOOST_REQUIRE_EQUAL(first, second);
 }
 
 // inject_tx_context

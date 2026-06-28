@@ -18,6 +18,9 @@
  */
 #include <bitcoin/server/protocols/protocol_bitcoind_rpc.hpp>
 
+#include <memory>
+#include <mutex>
+#include <utility>
 #include <variant>
 #include <vector>
 #include <bitcoin/server/define.hpp>
@@ -55,9 +58,41 @@ bool protocol_bitcoind_rpc::parse_verbosity(double& verbosity,
     return true;
 }
 
+// Sum of work from genesis to the identified header, as bitcoind encodes
+// it (chain_state spans the chain to accumulate, as with organization).
+// Work to a given header is immutable, so a single-entry cache requires no
+// invalidation and absorbs the dominant access pattern (repeated queries
+// at the tip). Distinct historical queries still pay the span computation.
+std::string protocol_bitcoind_rpc::to_chain_work(const node::query& query,
+    const system::settings& settings, const hash_digest& hash) NOEXCEPT
+{
+    using cache_t = std::pair<hash_digest, std::string>;
+    static std::mutex mutex{};
+    static std::shared_ptr<const cache_t> cache{};
+
+    // The span computation runs outside the lock; only access is guarded.
+    {
+        const std::lock_guard<std::mutex> lock{ mutex };
+        if (cache && cache->first == hash)
+            return cache->second;
+    }
+
+    const auto state = query.get_chain_state(settings, hash);
+    if (!state)
+        return {};
+
+    const auto work = encode_hash(from_uintx(state->cumulative_work()));
+    {
+        const std::lock_guard<std::mutex> lock{ mutex };
+        cache = std::make_shared<const cache_t>(hash, work);
+    }
+
+    return work;
+}
+
 void protocol_bitcoind_rpc::inject_block_context(boost::json::object& out,
-    const node::query& query, const database::header_link& link,
-    const chain::header& header) NOEXCEPT
+    const node::query& query, const system::settings& settings,
+    const database::header_link& link, const chain::header& header) NOEXCEPT
 {
     size_t height{};
     if (!query.get_height(height, link))
@@ -68,6 +103,10 @@ void protocol_bitcoind_rpc::inject_block_context(boost::json::object& out,
     out["height"] = height;
     out["confirmations"] = add1(floored_subtract(top, height));
     out["mediantime"] = median_time_past(query, link);
+
+    const auto chain_work = to_chain_work(query, settings, header.hash());
+    if (!chain_work.empty())
+        out["chainwork"] = chain_work;
 
     if (header.previous_block_hash() != null_hash)
         out["previousblockhash"] = encode_hash(header.previous_block_hash());

@@ -116,8 +116,12 @@ protected:
         const database::header_link& link) NOEXCEPT;
     static bool parse_verbosity(double& verbosity,
         const network::rpc::value_t& value, double missing) NOEXCEPT;
+    static std::string to_chain_work(const node::query& query,
+        const system::settings& settings,
+        const system::hash_digest& hash) NOEXCEPT;
     static void inject_block_context(boost::json::object& out,
-        const node::query& query, const database::header_link& link,
+        const node::query& query, const system::settings& settings,
+        const database::header_link& link,
         const system::chain::header& header) NOEXCEPT;
     static void inject_tx_context(boost::json::object& out,
         const node::query& query, const database::tx_link& link) NOEXCEPT;

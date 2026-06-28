@@ -242,7 +242,8 @@ bool protocol_bitcoind_rpc::handle_get_block(const code& ec,
             value_from(bitcoind_hashed(*block)) :
             value_from(bitcoind_verbose(*block));
 
-        inject_block_context(model.as_object(), query, link, block->header());
+        inject_block_context(model.as_object(), query, system_settings(),
+            link, block->header());
         send_result(std::move(model), two * block->serialized_size(witness));
         return true;
     }
@@ -277,6 +278,14 @@ bool protocol_bitcoind_rpc::handle_get_block_chain_info(const code& ec,
 
     // TODO: blocks/headers is a misnomer (off-by-one), intended?
     using namespace chain;
+    const auto chain_work = to_chain_work(query, system_settings(),
+        query.get_header_key(link));
+    if (chain_work.empty())
+    {
+        send_error(database::error::integrity);
+        return true;
+    }
+
     send_result(object_t
     {
         { "chain", chain_name(query) },
@@ -290,6 +299,8 @@ bool protocol_bitcoind_rpc::handle_get_block_chain_info(const code& ec,
         { "mediantime", median_time_past(query, link) },
         { "verificationprogress", progress },
         { "initialblockdownload", !is_current_chain(true) },
+        { "chainwork", chain_work },
+        { "size_on_disk", query.archive_size() },
         { "pruned", false },
         { "warnings", std::string{} }
     }, 512);
@@ -402,7 +413,7 @@ bool protocol_bitcoind_rpc::handle_get_block_header(const code& ec,
 
     auto out = header_to_bitcoind(*header);
     out["nTx"] = query.get_tx_count(link);
-    inject_block_context(out, query, link, *header);
+    inject_block_context(out, query, system_settings(), link, *header);
     send_result(value{ std::move(out) }, 512);
     return true;
 }
