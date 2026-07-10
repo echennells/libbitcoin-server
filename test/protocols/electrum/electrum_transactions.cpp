@@ -476,4 +476,21 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_transaction_id_from_pos__missing_posit
     BOOST_REQUIRE_EQUAL(response.at("error").as_object().at("code").as_int64(), not_found.value());
 }
 
+
+BOOST_FIXTURE_TEST_CASE(electrum__transaction_get__verbose_regtest__regtest_address,
+    electrum_ten_block_regtest_setup_fixture)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_4));
+
+    const auto& coinbase = *test::genesis.transactions_ptr()->front();
+    const auto tx0_hash = encode_hash(coinbase.hash(false));
+    const auto request = R"({"id":90,"method":"blockchain.transaction.get","params":["%1%",true]})" "\n";
+    const auto response = get((boost_format(request) % tx0_hash).str());
+    const auto& spk = response.at("result").at("vout").as_array().at(0)
+        .at("scriptPubKey").as_object();
+    BOOST_REQUIRE_EQUAL(spk.at("type").as_string(), "pubkey");
+    BOOST_REQUIRE_EQUAL(spk.at("address").as_string(),
+        "mpXwg4jMtRhuSpVq4xS3HFHmCmWp9NyGKt");
+}
+
 BOOST_AUTO_TEST_SUITE_END()

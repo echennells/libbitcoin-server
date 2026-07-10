@@ -24,10 +24,10 @@
 BC_PUSH_WARNING(NO_THROW_IN_NOEXCEPT)
 
 electrum_setup_fixture::electrum_setup_fixture(const initializer& setup,
-    bool address_index)
+    bool address_index, system::chain::selection context)
   : config_
     {
-      system::chain::selection::mainnet,
+      context,
       test::web_pages,
       test::web_pages
     },

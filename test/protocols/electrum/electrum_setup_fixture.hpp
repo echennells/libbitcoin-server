@@ -30,7 +30,8 @@ struct electrum_setup_fixture
 
     using initializer = std::function<bool(test::query_t&)>;
     explicit electrum_setup_fixture(const initializer& setup,
-        bool address_index=true);
+        bool address_index=true,
+        system::chain::selection context=system::chain::selection::mainnet);
     ~electrum_setup_fixture();
 
     boost::json::value receive();
@@ -63,6 +64,18 @@ struct electrum_ten_block_setup_fixture
         {
             return test::setup_ten_block_store(query);
         })
+    {
+    }
+};
+
+struct electrum_ten_block_regtest_setup_fixture
+  : electrum_setup_fixture
+{
+    inline electrum_ten_block_regtest_setup_fixture()
+      : electrum_setup_fixture([](test::query_t& query)
+        {
+            return test::setup_ten_block_store(query);
+        }, true, system::chain::selection::regtest)
     {
     }
 };
