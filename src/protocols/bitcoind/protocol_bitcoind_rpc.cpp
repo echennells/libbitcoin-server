@@ -41,6 +41,24 @@ BC_PUSH_WARNING(NO_THROW_IN_NOEXCEPT)
 BC_PUSH_WARNING(SMART_PTR_NOT_NEEDED)
 BC_PUSH_WARNING(NO_VALUE_OR_CONST_REF_SHARED_PTR)
 
+// UTXO-set membership (bitcoind parity).
+// ----------------------------------------------------------------------------
+
+// bitcoind excludes provably-unspendable outputs from its UTXO set
+// (CCoinsViewCache::AddCoin skips IsUnspendable), so its UTXO RPCs return json
+// null for them. libbitcoin's archive instead retains every output, so the
+// bitcoind-personality UTXO methods (gettxout, and gettxoutsetinfo/scantxoutset
+// once implemented) must filter to match. This mirrors Core's
+// CScript::IsUnspendable exactly: an OP_RETURN-prefixed script, or one larger
+// than the maximum script size. Note this is deliberately Core's criterion, not
+// system chain::script::is_unspendable (which keys on a reserved/invalid leading
+// opcode); the two differ, and gettxout must match bitcoind. [ECH-125]
+static bool is_utxo_set_excluded(const chain::script& script) NOEXCEPT
+{
+    return chain::script::is_pay_op_return_pattern(script.ops())
+        || script.serialized_size(false) > chain::max_script_size;
+}
+
 // Start.
 // ----------------------------------------------------------------------------
 
@@ -520,6 +538,14 @@ bool protocol_bitcoind_rpc::handle_get_tx_out(const code& ec,
 
     const auto output = query.get_output(output_link);
     if (!output)
+    {
+        send_result({}, 42);
+        return true;
+    }
+
+    // gettxout must return json null for outputs bitcoind never adds to its
+    // UTXO set; see is_utxo_set_excluded. [ECH-125]
+    if (is_utxo_set_excluded(output->script()))
     {
         send_result({}, 42);
         return true;
