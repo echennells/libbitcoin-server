@@ -61,8 +61,14 @@ and nothing else.
 ## Scope note
 
 The mismatch is a family across the UTXO-shaped surfaces, but the fix location
-differs per surface. bitcoind `getutxos` (REST) is structurally identical and
-can reuse `is_utxo_set_excluded`. The Electrum `listunspent` reference
+differs per surface. bitcoind `getutxos` (REST) is **declared but not
+implemented** — `get_utxos`/`get_utxos_confirmed` appear in the interface tuple
+(`bitcoind_rest.hpp:47-48`) with no corresponding `handle_get_utxos`
+subscription in `protocol_bitcoind_rest.cpp:54-62`, so there is no handler for
+`is_utxo_set_excluded` to guard. It becomes relevant only if that endpoint is
+implemented. (An earlier revision of this file claimed it was structurally
+identical and could reuse the helper; that read a declaration as an
+implementation and was wrong.) The Electrum `listunspent` reference
 (Fulcrum/electrs) also excludes OP_RETURN, but excludes it at *index* time — so
 an Electrum-parity fix, if wanted, belongs in the address indexer, not here. The
 native protocol has no Core reference and is unaffected by design.
