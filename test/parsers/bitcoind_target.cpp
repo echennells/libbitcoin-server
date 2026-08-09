@@ -210,6 +210,45 @@ BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__headers__block_headers)
     BOOST_REQUIRE_EQUAL(media_of(object), to_value(media_type::application_json));
 }
 
+BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__headers_query_count__block_headers)
+{
+    request_t out{};
+    const auto path = "/rest/headers/" + test_hash + ".json?count=3";
+    BOOST_REQUIRE(!bitcoind_target(out, path));
+    BOOST_REQUIRE_EQUAL(out.method, "block_headers");
+
+    const auto& object = params_of(out);
+    BOOST_REQUIRE_EQUAL(object.size(), 3u);
+    BOOST_REQUIRE_EQUAL(std::get<uint32_t>(object.at("count").value()), 3u);
+    BOOST_REQUIRE_EQUAL(*hash_of(object), expected_hash);
+    BOOST_REQUIRE_EQUAL(media_of(object), to_value(media_type::application_json));
+}
+
+BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__headers_query_absent__default_count)
+{
+    request_t out{};
+    const auto path = "/rest/headers/" + test_hash + ".bin";
+    BOOST_REQUIRE(!bitcoind_target(out, path));
+    BOOST_REQUIRE_EQUAL(out.method, "block_headers");
+    BOOST_REQUIRE_EQUAL(std::get<uint32_t>(params_of(out).at("count").value()), 5u);
+}
+
+BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__headers_forms__equivalent)
+{
+    request_t path_form{};
+    request_t query_form{};
+    BOOST_REQUIRE(!bitcoind_target(path_form, "/rest/headers/3/" + test_hash + ".bin"));
+    BOOST_REQUIRE(!bitcoind_target(query_form, "/rest/headers/" + test_hash + ".bin?count=3"));
+
+    BOOST_REQUIRE_EQUAL(path_form.method, query_form.method);
+    const auto& expected = params_of(path_form);
+    const auto& actual = params_of(query_form);
+    BOOST_REQUIRE_EQUAL(actual.size(), expected.size());
+    BOOST_REQUIRE_EQUAL(std::get<uint32_t>(actual.at("count").value()), std::get<uint32_t>(expected.at("count").value()));
+    BOOST_REQUIRE_EQUAL(*hash_of(actual), *hash_of(expected));
+    BOOST_REQUIRE_EQUAL(media_of(actual), media_of(expected));
+}
+
 // blockfilter
 
 BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__blockfilter_basic__block_filter)
@@ -249,6 +288,89 @@ BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__blockpart__block_part)
     BOOST_REQUIRE_EQUAL(std::get<uint32_t>(object.at("size").value()), 80u);
     BOOST_REQUIRE_EQUAL(*hash_of(object), expected_hash);
     BOOST_REQUIRE_EQUAL(media_of(object), to_value(media_type::application_octet_stream));
+}
+
+BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__blockpart_query__block_part)
+{
+    request_t out{};
+    const auto path = "/rest/blockpart/" + test_hash + ".bin?offset=0&size=80";
+    BOOST_REQUIRE(!bitcoind_target(out, path));
+    BOOST_REQUIRE_EQUAL(out.method, "block_part");
+
+    const auto& object = params_of(out);
+    BOOST_REQUIRE_EQUAL(object.size(), 4u);
+    BOOST_REQUIRE_EQUAL(std::get<uint32_t>(object.at("offset").value()), 0u);
+    BOOST_REQUIRE_EQUAL(std::get<uint32_t>(object.at("size").value()), 80u);
+    BOOST_REQUIRE_EQUAL(*hash_of(object), expected_hash);
+    BOOST_REQUIRE_EQUAL(media_of(object), to_value(media_type::application_octet_stream));
+}
+
+BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__blockpart_forms__equivalent)
+{
+    request_t path_form{};
+    request_t query_form{};
+    BOOST_REQUIRE(!bitcoind_target(path_form, "/rest/blockpart/" + test_hash + "/16/64.bin"));
+    BOOST_REQUIRE(!bitcoind_target(query_form, "/rest/blockpart/" + test_hash + ".bin?offset=16&size=64"));
+
+    BOOST_REQUIRE_EQUAL(path_form.method, query_form.method);
+    const auto& expected = params_of(path_form);
+    const auto& actual = params_of(query_form);
+    BOOST_REQUIRE_EQUAL(actual.size(), expected.size());
+    BOOST_REQUIRE_EQUAL(std::get<uint32_t>(actual.at("offset").value()), std::get<uint32_t>(expected.at("offset").value()));
+    BOOST_REQUIRE_EQUAL(std::get<uint32_t>(actual.at("size").value()), std::get<uint32_t>(expected.at("size").value()));
+    BOOST_REQUIRE_EQUAL(*hash_of(actual), *hash_of(expected));
+    BOOST_REQUIRE_EQUAL(media_of(actual), media_of(expected));
+}
+
+// query string
+
+BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__query_error_paths__expected)
+{
+    const std::vector<std::pair<std::string, code>> cases
+    {
+        // A query does not make an otherwise invalid target valid.
+        { "/rest/bogus?count=3", server::error::invalid_target },
+
+        // Present but unparseable parameters are rejected, not defaulted.
+        { "/rest/headers/" + test_hash + ".json?count=abc",
+            server::error::invalid_number },
+        { "/rest/headers/" + test_hash + ".json?count=",
+            server::error::invalid_number },
+        { "/rest/headers/" + test_hash + ".json?count=03",
+            server::error::invalid_number },
+
+        // bitcoind requires both blockpart parameters.
+        { "/rest/blockpart/" + test_hash + ".bin",
+            server::error::invalid_number },
+        { "/rest/blockpart/" + test_hash + ".bin?offset=0",
+            server::error::invalid_number },
+        { "/rest/blockpart/" + test_hash + ".bin?size=80",
+            server::error::invalid_number },
+        { "/rest/blockpart/" + test_hash + ".bin?offset=abc&size=80",
+            server::error::invalid_number },
+        { "/rest/blockpart/nothex.bin?offset=0&size=80",
+            server::error::invalid_hash }
+    };
+
+    for (const auto& [path, expected]: cases)
+    {
+        request_t out{};
+        BOOST_REQUIRE_MESSAGE(bitcoind_target(out, path) == expected, path);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__query_ignored__unparameterized_targets)
+{
+    // An unconsumed query is accepted and does not alter these targets.
+    request_t out{};
+    BOOST_REQUIRE(!bitcoind_target(out, "/rest/chaininfo.json?foo=bar"));
+    BOOST_REQUIRE_EQUAL(out.method, "chain_information");
+    BOOST_REQUIRE(params_of(out).empty());
+
+    request_t block{};
+    BOOST_REQUIRE(!bitcoind_target(block, "/rest/block/" + test_hash + ".json?foo=bar"));
+    BOOST_REQUIRE_EQUAL(block.method, "block");
+    BOOST_REQUIRE_EQUAL(*hash_of(params_of(block)), expected_hash);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

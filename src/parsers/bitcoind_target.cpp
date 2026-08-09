@@ -73,6 +73,9 @@ static bool to_number(Number& out, const std::string_view& token) NOEXCEPT
     return result.ec == std::errc{} && result.ptr == end;
 }
 
+// bitcoind defaults the headers count when the parameter is not provided.
+constexpr uint32_t default_header_count = 5;
+
 // Split a "<name>.<extension>" leaf into its name and a media value.
 static bool split_leaf(std::string& name, uint8_t& media,
     const std::string_view& leaf) NOEXCEPT
@@ -91,9 +94,17 @@ static bool split_leaf(std::string& name, uint8_t& media,
 // chaininfo (remaining endpoints return invalid_target until implemented).
 code bitcoind_target(request_t& out, const std::string_view& path) NOEXCEPT
 {
-    const auto clean = split(path, "?", false, false).front();
+    // The query carries parameters for the current headers and blockpart
+    // forms, so it is parsed here rather than discarded.
+    wallet::uri uri{};
+    if (!uri.decode(std::string{ path }))
+        return error::empty_path;
+
+    const auto clean = uri.path();
     if (clean.empty())
         return error::empty_path;
+
+    const auto query = uri.decode_query();
 
     // Avoid conflict with node type.
     using object_t = network::rpc::object_t;
@@ -182,15 +193,31 @@ code bitcoind_target(request_t& out, const std::string_view& path) NOEXCEPT
         return error::success;
     }
 
-    // /rest/headers/<count>/<hash>.<ext>
+    // /rest/headers/<hash>.<ext>?count=<count> and the form deprecated by
+    // bitcoind in 24.0, /rest/headers/<count>/<hash>.<ext>, still accepted.
     if (target == "headers")
     {
         if (segment == segments.size())
             return error::missing_target;
 
-        uint32_t count{};
-        if (!to_number(count, segments[segment++]))
-            return error::invalid_number;
+        // A lone numeric segment remains the deprecated form with its hash
+        // missing, so that its error is unchanged.
+        uint32_t count{ default_header_count };
+        if (segments.size() - segment > one)
+        {
+            if (!to_number(count, segments[segment++]))
+                return error::invalid_number;
+        }
+        else if (to_number(count, segments[segment]))
+        {
+            ++segment;
+        }
+        else if (const auto parameter = query.find("count");
+            parameter != query.end())
+        {
+            if (!to_number(count, parameter->second))
+                return error::invalid_number;
+        }
 
         if (segment == segments.size())
             return error::missing_hash;
@@ -241,11 +268,43 @@ code bitcoind_target(request_t& out, const std::string_view& path) NOEXCEPT
         return error::success;
     }
 
-    // /rest/blockpart/<hash>/<offset>/<size>.<ext> (libbitcoin extension)
+    // /rest/blockpart/<hash>.<bin|hex>?offset=<offset>&size=<size> and
+    // /rest/blockpart/<hash>/<offset>/<size>.<ext> (libbitcoin extension).
     if (target == "blockpart")
     {
         if (segment == segments.size())
             return error::missing_hash;
+
+        // bitcoind requires both parameters. A lone segment that is not a
+        // "<name>.<extension>" leaf falls through to the path form, so that
+        // its error is unchanged.
+        std::string leaf{};
+        uint8_t leaf_media{};
+        if (segments.size() - segment == one &&
+            split_leaf(leaf, leaf_media, segments[segment]))
+        {
+            ++segment;
+            const auto hash = to_hash(leaf);
+            if (!hash)
+                return error::invalid_hash;
+
+            const auto offset_parameter = query.find("offset");
+            const auto size_parameter = query.find("size");
+            uint32_t offset{};
+            uint32_t size{};
+            if (offset_parameter == query.end() ||
+                size_parameter == query.end() ||
+                !to_number(offset, offset_parameter->second) ||
+                !to_number(size, size_parameter->second))
+                return error::invalid_number;
+
+            method = "block_part";
+            params["media"] = leaf_media;
+            params["hash"] = hash;
+            params["offset"] = offset;
+            params["size"] = size;
+            return error::success;
+        }
 
         const auto hash = to_hash(segments[segment++]);
         if (!hash)
