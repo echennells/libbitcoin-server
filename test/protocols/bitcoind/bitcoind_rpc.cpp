@@ -539,7 +539,17 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__getnetworkinfo__fields)
     BOOST_REQUIRE(result.as_object().contains("version"));
     BOOST_REQUIRE(result.at("subversion").is_string());
     BOOST_REQUIRE(result.as_object().contains("protocolversion"));
+    BOOST_REQUIRE(result.at("localservices").is_string());
     BOOST_REQUIRE(result.at("networks").is_array());
+}
+
+// bitcoind encodes localservices as base16 of the big-endian service bits.
+BOOST_FIXTURE_TEST_CASE(bitcoind_rpc__getnetworkinfo__configured_services__base16_big_endian,
+    bitcoind_services_setup_fixture)
+{
+    const auto response = rpc("getnetworkinfo");
+    const auto& result = response.at("result");
+    BOOST_REQUIRE_EQUAL(as_text(result.at("localservices")), configured_services_base16);
 }
 
 // not implemented
