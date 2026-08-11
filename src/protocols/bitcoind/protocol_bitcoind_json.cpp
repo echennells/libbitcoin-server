@@ -19,6 +19,8 @@
 #include <bitcoin/server/protocols/protocol_bitcoind.hpp>
 
 #include <algorithm>
+#include <optional>
+#include <variant>
 #include <bitcoin/server/define.hpp>
 #include <bitcoin/server/parsers/parsers.hpp>
 
@@ -26,6 +28,39 @@ namespace libbitcoin {
 namespace server {
 
 using namespace system;
+
+// bitcoind accepts a boolean or number for the getblock and getrawtransaction
+// verbosity parameters (both were originally boolean), so these are typed as
+// a nullable value and coerced to a level here.
+bool protocol_bitcoind::to_level(size_t& level,
+    const std::optional<network::rpc::value_t>& verbosity,
+    size_t default_level) NOEXCEPT
+{
+    using namespace network::rpc;
+
+    // The dispatcher empties a nullable parameter that is omitted or null,
+    // and bitcoind obtains the default level for both.
+    if (!verbosity)
+    {
+        level = default_level;
+        return true;
+    }
+
+    const auto& value = verbosity->value();
+
+    // bitcoind maps false/true to the first two levels.
+    if (std::holds_alternative<boolean_t>(value))
+    {
+        level = std::get<boolean_t>(value) ? one : zero;
+        return true;
+    }
+
+    // The number must be whole, the caller bounds the level.
+    if (std::holds_alternative<number_t>(value))
+        return to_integer(level, std::get<number_t>(value));
+
+    return false;
+}
 
 uint32_t protocol_bitcoind::median_time_past(const node::query& query,
     const database::header_link& link) NOEXCEPT

@@ -261,6 +261,36 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__getblock__block9_verbosity2__tx_objects)
     BOOST_REQUIRE(tx.at(0).as_object().contains("txid"));
 }
 
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getblock__block9_missing_verbosity__txid_list)
+{
+    const auto response = rpc("getblock", hash_param(test::block9_hash));
+    BOOST_REQUIRE(response.at("result").at("tx").at(0).is_string());
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getblock__block9_verbosity_null__txid_list)
+{
+    const auto response = rpc("getblock", hash_param(test::block9_hash, "null"));
+    BOOST_REQUIRE(response.at("result").at("tx").at(0).is_string());
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getblock__block9_verbosity_true__txid_list)
+{
+    const auto response = rpc("getblock", hash_param(test::block9_hash, "true"));
+    BOOST_REQUIRE(response.at("result").at("tx").at(0).is_string());
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getblock__block9_verbosity_false__hex)
+{
+    const auto response = rpc("getblock", hash_param(test::block9_hash, "false"));
+    BOOST_REQUIRE(response.at("result").is_string());
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getblock__block9_verbosity_string__error)
+{
+    const auto response = rpc("getblock", hash_param(test::block9_hash, R"("1")"));
+    BOOST_REQUIRE(has_error(response));
+}
+
 BOOST_AUTO_TEST_CASE(bitcoind_rpc__getblockchaininfo__ten_block_store__expected)
 {
     const auto response = rpc("getblockchaininfo");
@@ -340,6 +370,36 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__coinbase_verbosity_two__no
     const auto& result = response.at("result");
     BOOST_REQUIRE_EQUAL(as_text(result.at("txid")), encode_hash(txid));
     BOOST_REQUIRE(!result.as_object().contains("fee"));
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__coinbase_missing_verbosity__hex)
+{
+    const auto txid = test::block1.transactions_ptr()->front()->hash(false);
+    const auto response = rpc("getrawtransaction", hash_param(txid));
+    BOOST_REQUIRE(response.at("result").is_string());
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__coinbase_verbosity_null__hex)
+{
+    const auto txid = test::block1.transactions_ptr()->front()->hash(false);
+    const auto response = rpc("getrawtransaction", hash_param(txid, "null"));
+    BOOST_REQUIRE(response.at("result").is_string());
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__coinbase_verbosity_true__context)
+{
+    const auto txid = test::block1.transactions_ptr()->front()->hash(false);
+    const auto response = rpc("getrawtransaction", hash_param(txid, "true"));
+    const auto& result = response.at("result");
+    BOOST_REQUIRE_EQUAL(as_text(result.at("txid")), encode_hash(txid));
+    BOOST_REQUIRE_EQUAL(as_text(result.at("blockhash")), block1);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__coinbase_verbosity_false__hex)
+{
+    const auto txid = test::block1.transactions_ptr()->front()->hash(false);
+    const auto response = rpc("getrawtransaction", hash_param(txid, "false"));
+    BOOST_REQUIRE(response.at("result").is_string());
 }
 
 BOOST_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__excess_verbosity__error)

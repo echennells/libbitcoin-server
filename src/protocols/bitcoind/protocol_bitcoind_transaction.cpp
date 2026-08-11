@@ -19,6 +19,7 @@
 #include <bitcoin/server/protocols/protocol_bitcoind_transaction.hpp>
 
 #include <algorithm>
+#include <optional>
 #include <utility>
 #include <variant>
 #include <bitcoin/server/define.hpp>
@@ -39,6 +40,20 @@ using namespace network::rpc;
 using namespace network::messages;
 using namespace std::placeholders;
 using namespace boost::json;
+
+// bitcoind getrawtransaction verbosity levels (doc/JSON-RPC-interface.md).
+// Unscoped for implicit conversion to the parsed level.
+enum tx_verbosity : size_t
+{
+    /// Serialized transaction, hex-encoded.
+    hexadecimal = 0,
+
+    /// Transaction object.
+    json_object = 1,
+
+    /// Transaction object embedding prevout context.
+    json_verbose = 2
+};
 
 BC_PUSH_WARNING(NO_THROW_IN_NOEXCEPT)
 BC_PUSH_WARNING(SMART_PTR_NOT_NEEDED)
@@ -80,7 +95,7 @@ void protocol_bitcoind_transaction::start() NOEXCEPT
 // The hint is unused (not required).
 bool protocol_bitcoind_transaction::handle_get_raw_transaction(const code& ec,
     rpc_interface::get_raw_transaction, const std::string& txid,
-    double verbose, const std::string&) NOEXCEPT
+    const std::optional<value_t>& verbosity, const std::string&) NOEXCEPT
 {
     if (stopped(ec))
         return false;
@@ -102,21 +117,15 @@ bool protocol_bitcoind_transaction::handle_get_raw_transaction(const code& ec,
         return true;
     }
 
-    enum verbosity : size_t
-    {
-        hexadecimal = 0,
-        json_object = 1,
-        json_verbose = 2
-    };
-
     size_t level{};
-    if (!to_integer(level, verbose) || level > verbosity::json_verbose)
+    if (!to_level(level, verbosity, tx_verbosity::hexadecimal) ||
+        level > tx_verbosity::json_verbose)
     {
         send_error(error::invalid_argument);
         return true;
     }
 
-    if (level == verbosity::hexadecimal)
+    if (level == tx_verbosity::hexadecimal)
     {
         send_text(to_text(*tx, tx->serialized_size(witness), witness));
         return true;
@@ -124,7 +133,7 @@ bool protocol_bitcoind_transaction::handle_get_raw_transaction(const code& ec,
 
     auto model = value_from(bitcoind(*tx));
     inject_tx_context(model.as_object(), query, link);
-    if (level == verbosity::json_verbose && !tx->is_coinbase() &&
+    if (level == tx_verbosity::json_verbose && !tx->is_coinbase() &&
         query.populate_without_metadata(*tx))
     {
         size_t height{};

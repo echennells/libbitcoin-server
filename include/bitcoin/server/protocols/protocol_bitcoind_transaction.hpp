@@ -20,6 +20,7 @@
 #define LIBBITCOIN_SERVER_PROTOCOLS_PROTOCOL_BITCOIND_TRANSACTION_HPP
 
 #include <memory>
+#include <optional>
 #include <bitcoin/server/define.hpp>
 #include <bitcoin/server/interfaces/interfaces.hpp>
 #include <bitcoin/server/protocols/protocol_bitcoind_dispatch.hpp>
@@ -65,7 +66,8 @@ protected:
         const std::string& hexstring) NOEXCEPT;
     bool handle_get_raw_transaction(const code& ec,
         rpc_interface::get_raw_transaction, const std::string& txid,
-        double verbose, const std::string& blockhash) NOEXCEPT;
+        const std::optional<network::rpc::value_t>& verbosity,
+        const std::string& blockhash) NOEXCEPT;
     bool handle_send_raw_transaction(const code& ec,
         rpc_interface::send_raw_transaction, const std::string& hexstring,
         double maxfeerate) NOEXCEPT;

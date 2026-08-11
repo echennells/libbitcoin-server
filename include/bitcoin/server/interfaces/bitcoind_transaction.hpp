@@ -32,7 +32,7 @@ struct bitcoind_transaction_methods
     {
         method<"createrawtransaction", array_t, object_t, optional<0.0>, optional<false>>{ "inputs", "outputs", "locktime", "replaceable" },
         method<"decoderawtransaction", string_t>{ "hexstring" },
-        method<"getrawtransaction", string_t, optional<0.0>, optional<""_t>>{ "txid", "verbosity", "blockhash" },
+        method<"getrawtransaction", string_t, nullable<value_t>, optional<""_t>>{ "txid", "verbosity", "blockhash" },
         method<"sendrawtransaction", string_t, optional<0.0>>{ "hexstring", "maxfeerate" },
         method<"testmempoolaccept", array_t, optional<0.0>>{ "rawtxs", "maxfeerate" },
         method<"analyzepsbt">{ unimplemented },
