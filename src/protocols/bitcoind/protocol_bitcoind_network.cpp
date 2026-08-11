@@ -80,6 +80,8 @@ bool protocol_bitcoind_network::handle_get_network_info(const code& ec,
     if (stopped(ec))
         return false;
 
+    const auto services = network_settings().services_maximum;
+
     // bitcoind's numeric version encoding (10'000 major, 100 minor, patch).
     const auto& settings = server_settings().bitcoind;
     const auto& segments = settings.version.segments();
@@ -90,6 +92,7 @@ bool protocol_bitcoind_network::handle_get_network_info(const code& ec,
         { "version", version },
         { "subversion", settings.subversion },
         { "protocolversion", network_settings().protocol_maximum },
+        { "localservices", encode_base16(to_big_endian(services)) },
         { "localrelay", network_settings().enable_relay },
         { "timeoffset", 0 },
         { "connections", channel_count() },
@@ -99,7 +102,7 @@ bool protocol_bitcoind_network::handle_get_network_info(const code& ec,
         { "incrementalfee", node_settings().minimum_bump_rate },
         { "localaddresses", array_t{} },
         { "warnings", std::string{} }
-    }, 256);
+    }, 512);
     return true;
 }
 
