@@ -68,9 +68,15 @@ static bool to_number(Number& out, const std::string_view& token) NOEXCEPT
     if (token.empty() || (token.size() > one && token.starts_with('0')))
         return false;
 
+    // std::from_chars assigns from a matched prefix, so out is not passed.
+    Number value{};
     const auto end = std::next(token.data(), token.size());
-    const auto result = std::from_chars(token.data(), end, out);
-    return result.ec == std::errc{} && result.ptr == end;
+    const auto result = std::from_chars(token.data(), end, value);
+    if (result.ec != std::errc{} || result.ptr != end)
+        return false;
+
+    out = value;
+    return true;
 }
 
 // bitcoind defaults the headers count when the parameter is not provided.
