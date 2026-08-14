@@ -29,6 +29,11 @@ constexpr auto expected_hash = base16_hash(
     "0000000000000000000000000000000000000000000000000000000000000042");
 static const std::string test_hash = encode_hash(expected_hash);
 
+// Proof of work precludes a nonzero leading digit, regtest does not.
+constexpr auto expected_digits_hash = base16_hash(
+    "42abcdef00000000000000000000000000000000000000000000000000000042");
+static const std::string test_digits_hash = encode_hash(expected_digits_hash);
+
 static const object_t& params_of(const request_t& request) NOEXCEPT
 {
     BOOST_REQUIRE(request.params.has_value());
@@ -236,6 +241,18 @@ BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__headers_query_absent__default_cou
     BOOST_REQUIRE(!bitcoind_target(out, path));
     BOOST_REQUIRE_EQUAL(out.method, "block_headers");
     BOOST_REQUIRE_EQUAL(std::get<uint32_t>(params_of(out).at("count").value()), 5u);
+}
+
+BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__headers_query_absent_digits__default_count)
+{
+    request_t out{};
+    const auto path = "/rest/headers/" + test_digits_hash + ".bin";
+    BOOST_REQUIRE(!bitcoind_target(out, path));
+    BOOST_REQUIRE_EQUAL(out.method, "block_headers");
+
+    const auto& object = params_of(out);
+    BOOST_REQUIRE_EQUAL(std::get<uint32_t>(object.at("count").value()), 5u);
+    BOOST_REQUIRE_EQUAL(*hash_of(object), expected_digits_hash);
 }
 
 BOOST_AUTO_TEST_CASE(parsers__bitcoind_target__headers_forms__equivalent)
