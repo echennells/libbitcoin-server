@@ -107,6 +107,14 @@ BOOST_AUTO_TEST_CASE(bitcoind_rest__headers_json__count_three_from_block5)
     BOOST_REQUIRE_EQUAL(as_text(result.at(0).at("hash")), block5);
 }
 
+BOOST_AUTO_TEST_CASE(bitcoind_rest__headers_query_json__count_three_from_block5)
+{
+    const auto result = rest_json("/rest/headers/" + block5 + ".json?count=3");
+    BOOST_REQUIRE(result.is_array());
+    BOOST_REQUIRE_EQUAL(result.as_array().size(), 3u);
+    BOOST_REQUIRE_EQUAL(as_text(result.at(0).at("hash")), block5);
+}
+
 BOOST_AUTO_TEST_CASE(bitcoind_rest__headers_hex__one_header__eighty_bytes)
 {
     const auto hex = rest_text("/rest/headers/1/" + block9 + ".hex");
@@ -116,9 +124,26 @@ BOOST_AUTO_TEST_CASE(bitcoind_rest__headers_hex__one_header__eighty_bytes)
     BOOST_REQUIRE_EQUAL(encode_base16(wire), header9);
 }
 
+BOOST_AUTO_TEST_CASE(bitcoind_rest__headers_query_hex__one_header__eighty_bytes)
+{
+    const auto hex = rest_text("/rest/headers/" + block9 + ".hex?count=1");
+    data_chunk wire{};
+    BOOST_REQUIRE(decode_base16(wire, hex));
+    BOOST_REQUIRE_EQUAL(wire.size(), 80u);
+    BOOST_REQUIRE_EQUAL(encode_base16(wire), header9);
+}
+
 BOOST_AUTO_TEST_CASE(bitcoind_rest__blockpart_bin__block9_header)
 {
     const auto wire = rest_data("/rest/blockpart/" + block9 + "/0/80.bin");
+    BOOST_REQUIRE_EQUAL(wire.size(), 80u);
+    BOOST_REQUIRE_EQUAL(encode_base16(wire), header9);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rest__blockpart_query_bin__block9_header)
+{
+    const auto target = "/rest/blockpart/" + block9 + ".bin?offset=0&size=80";
+    const auto wire = rest_data(target);
     BOOST_REQUIRE_EQUAL(wire.size(), 80u);
     BOOST_REQUIRE_EQUAL(encode_base16(wire), header9);
 }
