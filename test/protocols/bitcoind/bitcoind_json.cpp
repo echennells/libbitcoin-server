@@ -21,6 +21,11 @@
 #include <bitcoin/server/protocols/protocol_bitcoind.hpp>
 
 using namespace system;
+using value_t = network::rpc::value_t;
+using string_t = network::rpc::string_t;
+
+// Distinct from any bitcoind verbosity level (0, 1, 2).
+constexpr size_t default_level = 42;
 
 static std::string as_text(const boost::json::value& value) NOEXCEPT
 {
@@ -31,12 +36,63 @@ static std::string as_text(const boost::json::value& value) NOEXCEPT
 struct json
   : server::protocol_bitcoind
 {
+    using protocol_bitcoind::to_level;
     using protocol_bitcoind::median_time_past;
     using protocol_bitcoind::inject_block_context;
     using protocol_bitcoind::inject_tx_context;
     using protocol_bitcoind::header_to_bitcoind;
     using protocol_bitcoind::chain_name;
 };
+
+// to_level
+// ----------------------------------------------------------------------------
+
+BOOST_AUTO_TEST_SUITE(bitcoind_to_level_tests)
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__to_level__missing__default_level)
+{
+    size_t level{};
+    BOOST_REQUIRE(json::to_level(level, std::nullopt, default_level));
+    BOOST_REQUIRE_EQUAL(level, default_level);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__to_level__true__one)
+{
+    size_t level{};
+    BOOST_REQUIRE(json::to_level(level, value_t{ true }, default_level));
+    BOOST_REQUIRE_EQUAL(level, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__to_level__false__zero)
+{
+    size_t level{};
+    BOOST_REQUIRE(json::to_level(level, value_t{ false }, default_level));
+    BOOST_REQUIRE_EQUAL(level, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__to_level__number_two__two)
+{
+    size_t level{};
+    BOOST_REQUIRE(json::to_level(level, value_t{ 2.0 }, default_level));
+    BOOST_REQUIRE_EQUAL(level, 2u);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__to_level__fraction__false)
+{
+    size_t level{};
+    BOOST_REQUIRE(!json::to_level(level, value_t{ 1.5 }, default_level));
+    BOOST_REQUIRE_EQUAL(level, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_json__to_level__string__false)
+{
+    size_t level{};
+    const value_t text{ string_t{ "1" } };
+    BOOST_REQUIRE(!json::to_level(level, text, default_level));
+    BOOST_REQUIRE_EQUAL(level, 0u);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
 
 // header_to_bitcoind
 // ----------------------------------------------------------------------------

@@ -19,6 +19,7 @@
 #include <bitcoin/server/protocols/protocol_bitcoind_blockchain.hpp>
 
 #include <algorithm>
+#include <optional>
 #include <ranges>
 #include <unordered_set>
 #include <utility>
@@ -129,7 +130,7 @@ bool protocol_bitcoind_blockchain::handle_get_best_block_hash(const code& ec,
 
 bool protocol_bitcoind_blockchain::handle_get_block(const code& ec,
     rpc_interface::get_block, const std::string& blockhash,
-    double verbosity) NOEXCEPT
+    const std::optional<value_t>& verbosity) NOEXCEPT
 {
     if (stopped(ec))
         return false;
@@ -142,7 +143,8 @@ bool protocol_bitcoind_blockchain::handle_get_block(const code& ec,
     }
 
     size_t level{};
-    if (!to_integer(level, verbosity) || level > block_verbosity::verbose)
+    if (!to_level(level, verbosity, block_verbosity::hashed) ||
+        level > block_verbosity::verbose)
     {
         send_error(error::invalid_argument);
         return true;

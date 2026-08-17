@@ -20,6 +20,7 @@
 #define LIBBITCOIN_SERVER_PROTOCOLS_PROTOCOL_BITCOIND_HPP
 
 #include <memory>
+#include <optional>
 #include <bitcoin/server/channels/channels.hpp>
 #include <bitcoin/server/define.hpp>
 #include <bitcoin/server/protocols/protocol_http.hpp>
@@ -84,6 +85,12 @@ protected:
         BC_ASSERT(writer);
         return out;
     }
+
+    /// Coerce a boolean or number verbosity parameter to a level. An omitted
+    /// or null parameter obtains the default level. False if otherwise typed.
+    static bool to_level(size_t& level,
+        const std::optional<network::rpc::value_t>& verbosity,
+        size_t default_level) NOEXCEPT;
 
     /// Model composition.
     static double progress(size_t blocks, size_t headers) NOEXCEPT;
