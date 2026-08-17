@@ -26,6 +26,15 @@
 #define BITCOIND_TEST_USERNAME "user"
 #define BITCOIND_TEST_PASSWORD "pass"
 
+// Distinct from both the parser default and the network default, so that the
+// localservices emission is tested against a value the test itself sets.
+constexpr uint64_t configured_services
+{
+    network::messages::peer::service::node_network |
+    network::messages::peer::service::node_client_filters
+};
+constexpr auto configured_services_base16 = "0000000000000041";
+
 struct bitcoind_setup_fixture
 {
     using status = boost::beast::http::status;
@@ -141,6 +150,23 @@ struct bitcoind_witness_setup_fixture
       : bitcoind_setup_fixture([](test::query_t& query)
         {
             return test::setup_three_block_witness_store(query);
+        })
+    {
+    }
+};
+
+// Configured with a distinct service set -- for tests of the localservices
+// emission, which is otherwise a default of another library.
+struct bitcoind_services_setup_fixture
+  : bitcoind_setup_fixture
+{
+    inline bitcoind_services_setup_fixture()
+      : bitcoind_setup_fixture([](test::query_t& query)
+        {
+            return test::setup_ten_block_store(query);
+        }, [](configuration& config)
+        {
+            config.network.services_maximum = configured_services;
         })
     {
     }
