@@ -113,7 +113,8 @@ jobs:
         with:
           fetch-depth: 1
           path: 'libbitcoin-network'
-          ref: ${{ steps.get-branch.outputs.branch_name }}
+          # CI-PROOF BRANCH ONLY: pin the dependency this change requires.
+          ref: ech79-content-length-port
           repository: ${{ github.repository_owner }}/libbitcoin-network
 
       - name: Checkout repository [libbitcoin-node]
@@ -359,7 +360,8 @@ jobs:
         with:
           fetch-depth: 1
           path: 'libbitcoin-network'
-          ref: ${{ steps.get-branch.outputs.branch_name }}
+          # CI-PROOF BRANCH ONLY: pin the dependency this change requires.
+          ref: ech79-content-length-port
           repository: ${{ github.repository_owner }}/libbitcoin-network
 
       - name: Checkout repository [libbitcoin-node]
@@ -568,7 +570,8 @@ jobs:
         with:
           fetch-depth: 1
           path: 'libbitcoin-network'
-          ref: ${{ steps.get-branch.outputs.branch_name }}
+          # CI-PROOF BRANCH ONLY: pin the dependency this change requires.
+          ref: ech79-content-length-port
           repository: ${{ github.repository_owner }}/libbitcoin-network
 
       - name: Checkout repository [libbitcoin-node]
@@ -764,7 +767,8 @@ jobs:
         with:
           fetch-depth: 1
           path: 'libbitcoin-network'
-          ref: ${{ steps.get-branch.outputs.branch_name }}
+          # CI-PROOF BRANCH ONLY: pin the dependency this change requires.
+          ref: ech79-content-length-port
           repository: ${{ github.repository_owner }}/libbitcoin-network
 
       - name: Checkout repository [libbitcoin-node]
