@@ -526,6 +526,92 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_block_headers__proof_offset__expected)
     BOOST_REQUIRE_EQUAL(branch.at(3).as_string(), expected_branch[3]);
 }
 
+BOOST_AUTO_TEST_CASE(electrum__blockchain_block_headers__proof_over_max__same_as_capped)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_6));
+
+    // Count is capped at max, so both requests return the same five headers.
+    const auto capped = get(R"({"id":71,"method":"blockchain.block.headers","params":[0,5,8]})" "\n");
+    const auto over = get(R"({"id":72,"method":"blockchain.block.headers","params":[0,6,8]})" "\n");
+    REQUIRE_NO_THROW_TRUE(capped.at("result").is_object());
+    REQUIRE_NO_THROW_TRUE(over.at("result").is_object());
+
+    const auto& capped_result = capped.at("result").as_object();
+    const auto& over_result = over.at("result").as_object();
+    BOOST_REQUIRE_EQUAL(capped_result.at("count").as_int64(), 5);
+    BOOST_REQUIRE_EQUAL(over_result.at("count").as_int64(), 5);
+
+    const auto& capped_headers = capped_result.at("headers").as_array();
+    const auto& over_headers = over_result.at("headers").as_array();
+    BOOST_REQUIRE_EQUAL(over_headers.size(), capped_headers.size());
+    BOOST_REQUIRE_EQUAL(over_headers.at(0).as_string(), capped_headers.at(0).as_string());
+    BOOST_REQUIRE_EQUAL(over_headers.at(1).as_string(), capped_headers.at(1).as_string());
+    BOOST_REQUIRE_EQUAL(over_headers.at(2).as_string(), capped_headers.at(2).as_string());
+    BOOST_REQUIRE_EQUAL(over_headers.at(3).as_string(), capped_headers.at(3).as_string());
+    BOOST_REQUIRE_EQUAL(over_headers.at(4).as_string(), capped_headers.at(4).as_string());
+
+    // The proof is a function of the returned headers, not the requested count.
+    BOOST_REQUIRE_EQUAL(over_result.at("root").as_string(), capped_result.at("root").as_string());
+
+    const auto& capped_branch = capped_result.at("branch").as_array();
+    const auto& over_branch = over_result.at("branch").as_array();
+    BOOST_REQUIRE_EQUAL(over_branch.size(), capped_branch.size());
+    BOOST_REQUIRE_EQUAL(over_branch.at(0).as_string(), capped_branch.at(0).as_string());
+    BOOST_REQUIRE_EQUAL(over_branch.at(1).as_string(), capped_branch.at(1).as_string());
+    BOOST_REQUIRE_EQUAL(over_branch.at(2).as_string(), capped_branch.at(2).as_string());
+    BOOST_REQUIRE_EQUAL(over_branch.at(3).as_string(), capped_branch.at(3).as_string());
+}
+
+BOOST_AUTO_TEST_CASE(electrum__blockchain_block_headers__proof_over_max__proves_last_returned)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_6));
+
+    using namespace test;
+    const auto expected_root = encode_hash(merkle_root(
+    {
+        block0_hash,
+        block1_hash,
+        block2_hash,
+        block3_hash,
+        block4_hash,
+        block5_hash,
+        block6_hash,
+        block7_hash,
+        block8_hash
+    }));
+
+    // Count is capped at max, so block4 is the last returned header and its
+    // sibling leaf is block5. The requested last header would be block5.
+    const string_list expected_branch
+    {
+        encode_hash(block5_hash),
+        encode_hash(root67),
+        encode_hash(root03),
+        encode_hash(root88)
+    };
+
+    const auto response = get(R"({"id":73,"method":"blockchain.block.headers","params":[0,6,8]})" "\n");
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_object());
+
+    const auto& result = response.at("result").as_object();
+    REQUIRE_NO_THROW_TRUE(result.at("max").is_int64());
+    REQUIRE_NO_THROW_TRUE(result.at("count").is_int64());
+    REQUIRE_NO_THROW_TRUE(result.at("headers").is_array());
+    REQUIRE_NO_THROW_TRUE(result.at("root").is_string());
+    BOOST_REQUIRE_EQUAL(result.at("max").as_int64(), 5);
+    BOOST_REQUIRE_EQUAL(result.at("count").as_int64(), 5);
+    BOOST_REQUIRE_EQUAL(result.at("headers").as_array().size(), 5u);
+    BOOST_REQUIRE_EQUAL(result.at("root").as_string(), expected_root);
+
+    const auto& branch = result.at("branch").as_array();
+    BOOST_REQUIRE(branch.at(0).is_string());
+    BOOST_REQUIRE_EQUAL(branch.size(), expected_branch.size());
+    BOOST_REQUIRE_EQUAL(branch.at(0).as_string(), expected_branch[0]);
+    BOOST_REQUIRE_EQUAL(branch.at(1).as_string(), expected_branch[1]);
+    BOOST_REQUIRE_EQUAL(branch.at(2).as_string(), expected_branch[2]);
+    BOOST_REQUIRE_EQUAL(branch.at(3).as_string(), expected_branch[3]);
+}
+
 BOOST_AUTO_TEST_CASE(electrum__blockchain_block_headers__start_above_top__not_found)
 {
     BOOST_REQUIRE(handshake(electrum::version::v1_6));
