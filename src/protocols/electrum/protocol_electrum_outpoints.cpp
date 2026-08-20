@@ -306,7 +306,8 @@ void protocol_electrum::outpoint_notify(const std::unique_ptr<object_t>& status,
 
     send_notification("blockchain.outpoint.subscribe", array_t
     {
-        array_t{ encode_hash(prevout.hash()), prevout.index() },
+        encode_hash(prevout.hash()),
+        prevout.index(),
         std::move(*status)
     }, 128);
 }
@@ -319,7 +320,7 @@ object_t protocol_electrum::to_outpoint_status(size_t output_height) NOEXCEPT
 {
     return
     {
-        { "height", to_signed(output_height) }
+        { "funder_height", to_signed(output_height) }
     };
 }
 
@@ -329,7 +330,7 @@ object_t protocol_electrum::to_outpoint_status(size_t output_height,
 {
     return
     {
-        { "height", to_signed(output_height) },
+        { "funder_height", to_signed(output_height) },
         { "spender_txhash", encode_hash(history.tx.hash()) },
         { "spender_height", to_signed(history.tx.height()) }
     };
