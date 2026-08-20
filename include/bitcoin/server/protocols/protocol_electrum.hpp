@@ -238,19 +238,22 @@ protected:
     /// -----------------------------------------------------------------------
 
     void get_balance(const hash_digest& hash) NOEXCEPT;
-    void get_history(const hash_digest& hash) NOEXCEPT;
-    void get_mempool(const hash_digest& hash) NOEXCEPT;
-    void list_unspent(const hash_digest& hash) NOEXCEPT;
+    void get_history(const hash_digest& hash, notify_t type) NOEXCEPT;
+    void get_mempool(const hash_digest& hash, notify_t type) NOEXCEPT;
+    void list_unspent(const hash_digest& hash, notify_t type) NOEXCEPT;
 
     void do_get_balance(const hash_digest& hash) NOEXCEPT;
-    void do_get_history(const hash_digest& hash) NOEXCEPT;
-    void do_get_mempool(const hash_digest& hash) NOEXCEPT;
-    void do_list_unspent(const hash_digest& hash) NOEXCEPT;
+    void do_get_history(const hash_digest& hash, notify_t type) NOEXCEPT;
+    void do_get_mempool(const hash_digest& hash, notify_t type) NOEXCEPT;
+    void do_list_unspent(const hash_digest& hash, notify_t type) NOEXCEPT;
 
     void complete_get_balance(const code& ec, uint64_t confirmed, int64_t unconfirmed) NOEXCEPT;
-    void complete_get_history(const code& ec, const histories& histories) NOEXCEPT;
-    void complete_get_mempool(const code& ec, const histories& histories) NOEXCEPT;
-    void complete_list_unspent(const code& ec, const unspents& unspents) NOEXCEPT;
+    void complete_get_history(const code& ec, const histories& histories,
+        notify_t type) NOEXCEPT;
+    void complete_get_mempool(const code& ec, const histories& histories,
+        notify_t type) NOEXCEPT;
+    void complete_list_unspent(const code& ec, const unspents& unspents,
+        notify_t type) NOEXCEPT;
 
     void handle_estimate_fee(const code& ec, uint64_t fee) NOEXCEPT;
     void complete_estimate_fee(const code& ec, uint64_t fee) NOEXCEPT;
@@ -315,6 +318,7 @@ private:
     // Aliases.
     using array_t = network::rpc::array_t;
     using object_t = network::rpc::object_t;
+    using value_t = network::rpc::value_t;
 
     // Post to notification strand.
     template <class Derived, typename Method, typename... Args>
@@ -327,6 +331,8 @@ private:
     // Transformations.
     static array_t transform(const unspents& unspents) NOEXCEPT;
     static array_t transform(const histories& histories) NOEXCEPT;
+    static value_t to_result(array_t&& values, const std::string& key,
+        notify_t type) NOEXCEPT;
     static void write_status(midstate& accumulator,
         const history& history) NOEXCEPT;
     static bool is_valid_hint(const std::string& hint) NOEXCEPT;
