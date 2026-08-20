@@ -125,11 +125,12 @@ void protocol_electrum::handle_blockchain_scripthash_get_history(const code& ec,
 
     hash_digest hash{};
     decode_hash(hash, scripthash);
-    get_history(hash);
+    get_history(hash, notify_t::scripthash);
 }
 
 // common
-void protocol_electrum::get_history(const system::hash_digest& hash) NOEXCEPT
+void protocol_electrum::get_history(const system::hash_digest& hash,
+    notify_t type) NOEXCEPT
 {
     BC_ASSERT(stranded());
     if (hash == null_hash)
@@ -145,10 +146,11 @@ void protocol_electrum::get_history(const system::hash_digest& hash) NOEXCEPT
     }
 
     monitor(true);
-    PARALLEL(do_get_history, hash);
+    PARALLEL(do_get_history, hash, type);
 }
 
-void protocol_electrum::do_get_history(const hash_digest& hash) NOEXCEPT
+void protocol_electrum::do_get_history(const hash_digest& hash,
+    notify_t type) NOEXCEPT
 {
     BC_ASSERT(!stranded());
     histories histories{};
@@ -157,11 +159,12 @@ void protocol_electrum::do_get_history(const hash_digest& hash) NOEXCEPT
     const auto ec = query.get_history(stopping_, cursor, histories, hash,
         options().maximum_history, turbo_);
 
-    POST(complete_get_history, ec, hash, std::move(histories));
+    POST(complete_get_history, ec, hash, std::move(histories), type);
 }
 
 void protocol_electrum::complete_get_history(const code& ec,
-    const hash_digest& scripthash, const histories& histories) NOEXCEPT
+    const hash_digest& scripthash, const histories& histories,
+    notify_t type) NOEXCEPT
 {
     BC_ASSERT(stranded());
     monitor(false);
@@ -178,7 +181,7 @@ void protocol_electrum::complete_get_history(const code& ec,
     const auto size = add1(histories.size()) * 128u;
     auto out = transform(histories);
     append_retained(out, scripthash);
-    send_result(std::move(out), size);
+    send_result(to_result(std::move(out), "history", type), size);
 }
 
 // get_mempool
@@ -201,11 +204,12 @@ void protocol_electrum::handle_blockchain_scripthash_get_mempool(const code& ec,
 
     hash_digest hash{};
     decode_hash(hash, scripthash);
-    get_mempool(hash);
+    get_mempool(hash, notify_t::scripthash);
 }
 
 // common
-void protocol_electrum::get_mempool(const system::hash_digest& hash) NOEXCEPT
+void protocol_electrum::get_mempool(const system::hash_digest& hash,
+    notify_t type) NOEXCEPT
 {
     BC_ASSERT(stranded());
     if (hash == null_hash)
@@ -221,10 +225,11 @@ void protocol_electrum::get_mempool(const system::hash_digest& hash) NOEXCEPT
     }
 
     monitor(true);
-    PARALLEL(do_get_mempool, hash);
+    PARALLEL(do_get_mempool, hash, type);
 }
 
-void protocol_electrum::do_get_mempool(const hash_digest& hash) NOEXCEPT
+void protocol_electrum::do_get_mempool(const hash_digest& hash,
+    notify_t type) NOEXCEPT
 {
     BC_ASSERT(!stranded());
     histories histories{};
@@ -232,11 +237,12 @@ void protocol_electrum::do_get_mempool(const hash_digest& hash) NOEXCEPT
     auto ec = query.get_unconfirmed_history(stopping_, histories, hash,
         options().maximum_history, turbo_);
 
-    POST(complete_get_mempool, ec, hash, std::move(histories));
+    POST(complete_get_mempool, ec, hash, std::move(histories), type);
 }
 
 void protocol_electrum::complete_get_mempool(const code& ec,
-    const hash_digest& scripthash, const histories& histories) NOEXCEPT
+    const hash_digest& scripthash, const histories& histories,
+    notify_t type) NOEXCEPT
 {
     BC_ASSERT(stranded());
     monitor(false);
@@ -253,7 +259,7 @@ void protocol_electrum::complete_get_mempool(const code& ec,
     const auto size = add1(histories.size()) * 128u;
     auto out = transform(histories);
     append_retained(out, scripthash);
-    send_result(std::move(out), size);
+    send_result(to_result(std::move(out), "history", type), size);
 }
 
 // list_unspent
@@ -275,11 +281,12 @@ void protocol_electrum::handle_blockchain_scripthash_list_unspent(const code& ec
 
     hash_digest hash{};
     decode_hash(hash, scripthash);
-    list_unspent(hash);
+    list_unspent(hash, notify_t::scripthash);
 }
 
 // common
-void protocol_electrum::list_unspent(const system::hash_digest& hash) NOEXCEPT
+void protocol_electrum::list_unspent(const system::hash_digest& hash,
+    notify_t type) NOEXCEPT
 {
     BC_ASSERT(stranded());
     if (hash == null_hash)
@@ -295,20 +302,21 @@ void protocol_electrum::list_unspent(const system::hash_digest& hash) NOEXCEPT
     }
 
     monitor(true);
-    PARALLEL(do_list_unspent, hash);
+    PARALLEL(do_list_unspent, hash, type);
 }
 
-void protocol_electrum::do_list_unspent(const hash_digest& hash) NOEXCEPT
+void protocol_electrum::do_list_unspent(const hash_digest& hash,
+    notify_t type) NOEXCEPT
 {
     BC_ASSERT(!stranded());
     unspent_outputs unspents{};
     const auto& query = archive();
     const auto ec = query.get_unspent(stopping_, unspents, hash, turbo_);
-    POST(complete_list_unspent, ec, std::move(unspents));
+    POST(complete_list_unspent, ec, std::move(unspents), type);
 }
 
 void protocol_electrum::complete_list_unspent(const code& ec,
-    const unspent_outputs& unspents) NOEXCEPT
+    const unspent_outputs& unspents, notify_t type) NOEXCEPT
 {
     BC_ASSERT(stranded());
     monitor(false);
@@ -323,7 +331,7 @@ void protocol_electrum::complete_list_unspent(const code& ec,
     }
 
     const auto size = add1(unspents.size()) * 128u;
-    send_result(transform(unspents), size);
+    send_result(to_result(transform(unspents), "utxos", type), size);
 }
 
 // utilities
@@ -422,6 +430,21 @@ array_t protocol_electrum::transform(const unspent_outputs& ins) NOEXCEPT
     });
 
     return out;
+}
+
+// The blockchain.scriptpubkey.* methods (v1.7) return a single key object,
+// while blockchain.scripthash.* and blockchain.address.* return a bare array.
+// The shape follows the method family, not the negotiated version, since the
+// earlier families remain served at v1.7.
+value_t protocol_electrum::to_result(array_t&& values, const std::string& key,
+    notify_t type) NOEXCEPT
+{
+    if (type != notify_t::scriptpubkey)
+        return { std::move(values) };
+
+    object_t result{};
+    result[key] = std::move(values);
+    return { std::move(result) };
 }
 
 BC_POP_WARNING()

@@ -63,7 +63,7 @@ void protocol_electrum::handle_blockchain_address_get_history(const code& ec,
         return;
     }
 
-    get_history(extract_scripthash(address));
+    get_history(extract_scripthash(address), notify_t::address);
 }
 
 void protocol_electrum::handle_blockchain_address_get_mempool(const code& ec,
@@ -79,7 +79,7 @@ void protocol_electrum::handle_blockchain_address_get_mempool(const code& ec,
         return;
     }
 
-    get_mempool(extract_scripthash(address));
+    get_mempool(extract_scripthash(address), notify_t::address);
 }
 
 void protocol_electrum::handle_blockchain_address_list_unspent(const code& ec,
@@ -95,7 +95,7 @@ void protocol_electrum::handle_blockchain_address_list_unspent(const code& ec,
         return;
     }
 
-    list_unspent(extract_scripthash(address));
+    list_unspent(extract_scripthash(address), notify_t::address);
 }
 
 void protocol_electrum::handle_blockchain_address_subscribe(const code& ec,
