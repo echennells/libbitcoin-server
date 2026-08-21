@@ -197,6 +197,20 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_get_history__confirmed_and_
     BOOST_REQUIRE_EQUAL(tx3.at("tx_hash").as_string(), encode_hash(hash3));
 }
 
+// The blockchain.scriptpubkey.* methods share this implementation and return
+// the history under a single key object. The shape follows the method family,
+// not the negotiated version, so this remains a bare array at v1.7.
+BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_get_history__version_1_7__array)
+{
+    BOOST_REQUIRE(query_.address_enabled());
+    BOOST_REQUIRE(handshake(electrum::version::v1_7));
+
+    const auto request = R"({"id":1007,"method":"blockchain.scripthash.get_history","params":["%1%"]})" "\n";
+    const auto response = get((boost_format(request) % bogus_scripthash).str());
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_array());
+    BOOST_REQUIRE(response.at("result").as_array().empty());
+}
+
 // blockchain.scripthash.get_mempool
 
 BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_get_mempool__missing_arguments__dropped)
