@@ -51,6 +51,7 @@ parser::parser(system::chain::selection context,
 
     configured.network.threads = 16;
     configured.network.enable_relay = true;
+    configured.network.enable_not_found = true;
     configured.network.enable_address = true;
     configured.network.enable_address_v2 = false;
     configured.network.enable_witness_tx = false;
@@ -652,6 +653,11 @@ options_metadata parser::load_settings() THROWS
         "peer.enable_relay",
         value<bool>(&configured.network.enable_relay),
         "Enable transaction relay, defaults to 'true'."
+    )
+    (
+        "peer.enable_not_found",
+        value<bool>(&configured.network.enable_not_found),
+        "Enable not_found messages, defaults to 'true'."
     )
     (
         "peer.enable_privacy",
