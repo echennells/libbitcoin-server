@@ -87,10 +87,12 @@ public:
         virtual bool enabled() const NOEXCEPT;
     };
 
+    /// Electrum is served over tcp/s (json-rpc downgrade), http/s and ws/s,
+    /// so the http settings apply only to the http/ws transports.
     struct electrum_server
-      : public network::settings::tls_server
+      : public network::settings::websocket_server
     {
-        using base = network::settings::tls_server;
+        using base = network::settings::websocket_server;
         using base::base;
 
         /// Maximum number of headers the server will return in single request.
@@ -102,6 +104,12 @@ public:
 
         /// Maximum cumulative number of address subscriptions per channel.
         uint32_t maximum_subscriptions{ 1'000'000 };
+
+        /// Interval between unrequested pings, zero disables (1.7, not http).
+        uint32_t ping_interval_seconds{ 0 };
+
+        /// Number of hex characters of data carried by an unrequested ping.
+        uint32_t ping_size{ 0 };
 
         /// Minimum protocol version.
         system::config::version protocol_minimum{ 1, 0, 0, 0 };
@@ -125,6 +133,15 @@ public:
         /// Advertised servers via server.peers.subscribe.
         network::config::endpoints more_binds{};
         network::config::endpoints more_safes{};
+    };
+
+    /// sparrow interface settings, independent of electrum. Sparrow adds no
+    /// settings to electrum, but derives them as it serves that interface.
+    struct sparrow_server
+      : public electrum_server
+    {
+        using base = electrum_server;
+        using base::base;
     };
 
     /// html (http/s) document server settings (has directory/default).
@@ -165,7 +182,13 @@ public:
 
         system::config::byte p2kh_prefix;
         system::config::byte p2sh_prefix;
+        system::config::byte wif_prefix;
         std::string witness_prefix;
+        uint32_t hd_private_prefix;
+        uint32_t hd_public_prefix;
+
+        /// The configured prefixes as a wallet context.
+        system::wallet::context to_context() const NOEXCEPT;
     };
 
     struct bitcoind_server
@@ -180,9 +203,9 @@ public:
     };
 
     struct btcd_server
-      : public network::settings::http_server
+      : public bitcoind_server
     {
-        using base = network::settings::http_server;
+        using base = bitcoind_server;
         using base::base;
 
         /// Maximum cumulative number of loadtxfilter watches per channel.
@@ -225,6 +248,9 @@ public:
 
     /// electrum compat interface (tcp/s, json-rpc-v2)
     electrum_server electrum{ "electrum" };
+
+    /// sparrow interface (electrum plus block stats and silent payments)
+    sparrow_server sparrow{ "sparrow" };
 
     /// stratum v1 compat interface (tcp/s, json-rpc-v1, auth handshake)
     network::settings::tls_server stratum_v1{ "stratum_v1" };

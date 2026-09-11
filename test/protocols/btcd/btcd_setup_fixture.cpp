@@ -29,118 +29,55 @@ BC_PUSH_WARNING(NO_THROW_IN_NOEXCEPT)
 
 btcd_setup_fixture::btcd_setup_fixture(const initializer& setup,
     bool address_index, const configurator& configure)
-  : config_
-    {
-        system::chain::selection::mainnet,
-        test::web_pages,
-        test::web_pages
-    },
-    store_
-    {
-        [&]() NOEXCEPT -> const database::settings&
+  : rpc_setup_fixture(setup,
+        [configure](configuration& config) NOEXCEPT
         {
-            if (!address_index)
-                config_.database.outs.buckets = 0;
+            auto& btcd = config.server.btcd;
+            btcd.binds = { { BTCD_ENDPOINT } };
 
-            config_.database.path = TEST_DIRECTORY;
-            return config_.database;
-        }()
-    },
-    query_{ store_ }, log_{},
-    server_{ query_, config_, log_ }
+            // 2: the ws connection, plus the plain one used by http_rpc or
+            // tcp_rpc.
+            btcd.connections = 2;
+
+            // Distinct from the [bitcoind] section default, so that a read
+            // of the wrong service section is visible.
+            btcd.subversion = "/libbitcoin:btcd/";
+            btcd.inactivity_minutes = 1;
+
+            if (configure)
+                configure(config);
+        }, address_index)
 {
-    test::clear(test::directory);
-
-    auto& database_settings = config_.database;
-    auto& network_settings = config_.network;
-    auto& node_settings = config_.node;
-    auto& btcd = config_.server.btcd;
-
-    btcd.binds = { { BTCD_ENDPOINT } };
-
-    // 2: the ws connection (websocket_/socket_) plus the plain http one
-    // (http_socket_) used by http_rpc().
-    btcd.connections = 2;
-    btcd.inactivity_minutes = 1;
-    database_settings.interval_depth = 2;
-    node_settings.delay_inbound = false;
-    node_settings.minimum_fee_rate = 99.0;
-    network_settings.inbound.connections = 0;
-    network_settings.outbound.connections = 0;
-
-    // Apply test-specific configuration overrides.
-    if (configure)
-        configure(config_);
-
-    // Create and populate the store.
-    auto ec = store_.create([](auto, auto) {});
-    BOOST_REQUIRE_MESSAGE(!ec, ec.message());
-    setup(query_);
-
-    // Run the server.
-    std::promise<code> running{};
-    server_.run([&](const code& ec) NOEXCEPT
-    {
-        running.set_value(ec);
-    });
-
-    // Block until server is running.
-    ec = running.get_future().get();
+    const auto endpoint = config_.server.btcd.binds.back().to_endpoint();
+    client_.connect(endpoint);
+    const auto ec = client_.upgrade();
     BOOST_REQUIRE_MESSAGE(!ec, ec.message());
 
-    socket_.connect(btcd.binds.back().to_endpoint());
-
-    network::boost_code wec{};
-    websocket_.text(true);
-    websocket_.handshake("localhost", "/", wec);
-    BOOST_REQUIRE_MESSAGE(!wec, wec.message());
-
-    http_socket_.connect(btcd.binds.back().to_endpoint());
+    other_.connect(endpoint);
 }
 
 btcd_setup_fixture::~btcd_setup_fixture()
 {
-    network::boost_code ec{};
-    websocket_.close(websocket::close_code::normal, ec);
-
-    // Expected and harmless during fixture teardown:
-    // websocket_closed   : normal (graceful handshake).
-    // operation_canceled : hard (invalid request test).
-    // peer_disconnect    : peer gone (failed authenticate test).
-    const auto reason = network::error::ws_to_error_code(ec);
-    if (ec &&
-        reason != network::error::websocket_closed &&
-        reason != network::error::operation_canceled &&
-        reason != network::error::peer_disconnect)
-    {
-        BOOST_WARN_MESSAGE(false, ec.message());
-    }
-
-    http_socket_.close();
-    server_.close();
-    ec = store_.close([](auto, auto){});
-    BOOST_WARN_MESSAGE(!ec, ec.message());
-    test::clear(test::directory);
+    client_.close();
+    other_.close();
 }
 
 BC_POP_WARNING()
 
-boost::json::value btcd_setup_fixture::rpc(std::string_view method,
+static std::string body_of(int id, std::string_view method,
     std::string_view params)
 {
     std::ostringstream body{};
-    body << R"({"jsonrpc":"1.0","id":)" << request_id_++
+    body << R"({"jsonrpc":"1.0","id":)" << id
          << R"(,"method":")" << method
          << R"(","params":)" << params << "}";
+    return body.str();
+}
 
-    network::boost_code ec{};
-    websocket_.write(net::buffer(body.str()), ec);
-    BOOST_REQUIRE_MESSAGE(!ec, ec.message());
-
-    flat_buffer buffer{};
-    websocket_.read(buffer, ec);
-    BOOST_REQUIRE_MESSAGE(!ec, ec.message());
-    return test::parse_json(buffers_to_string(buffer.data()));
+boost::json::value btcd_setup_fixture::rpc(std::string_view method,
+    std::string_view params)
+{
+    return client_.frame(body_of(request_id_++, method, params), true);
 }
 
 int64_t btcd_setup_fixture::rpc_error(std::string_view method,
@@ -176,39 +113,21 @@ bool btcd_setup_fixture::authenticate(const std::string& username,
 
 boost::json::value btcd_setup_fixture::receive_notification()
 {
-    flat_buffer buffer{};
-    network::boost_code ec{};
-    websocket_.read(buffer, ec);
-    BOOST_REQUIRE_MESSAGE(!ec, ec.message());
-    return test::parse_json(buffers_to_string(buffer.data()));
+    return client_.read_frame(true);
+}
+
+// Raw json on the plain socket, which the server detects and downgrades to a
+// newline-delimited json-rpc stream. Mutually exclusive with http_rpc, as the
+// detection is latched on the first read of the connection.
+boost::json::value btcd_setup_fixture::tcp_rpc(std::string_view method,
+    std::string_view params)
+{
+    return other_.send(body_of(http_request_id_++, method, params) + "\n");
 }
 
 boost::json::value btcd_setup_fixture::http_rpc(std::string_view method,
     std::string_view params)
 {
-    std::ostringstream body{};
-    body << R"({"jsonrpc":"2.0","id":)" << http_request_id_++
-         << R"(,"method":")" << method
-         << R"(","params":)" << params << "}";
-
-    http::request<http::string_body> request{ http::verb::post, "/",
-        network::http::version_1_1 };
-    request.set(http::field::host, "localhost");
-    request.set(http::field::content_type, "application/json");
-    request.body() = body.str();
-    request.prepare_payload();
-    request.keep_alive(true);
-    http::write(http_socket_, request);
-
-    flat_buffer buffer{};
-    network::boost_code ec{};
-    http::response<http::string_body> response{};
-    http::read(http_socket_, buffer, response, ec);
-    BOOST_REQUIRE_MESSAGE(!ec, ec.message());
-    return test::parse_json(response.body());
+    return other_.post(body_of(http_request_id_++, method, params), "/", true);
 }
 
-void btcd_setup_fixture::notify(node::chase event_, node::event_value value)
-{
-    server_.notify(system::error::success, event_, value);
-}

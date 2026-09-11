@@ -21,39 +21,60 @@
 
 #include "../../test.hpp"
 #include "../../mocks/blocks.hpp"
+#include "../fixture/rpc_client.hpp"
+#include "../fixture/rpc_setup_fixture.hpp"
 
 #define ELECTRUM_ENDPOINT "127.0.0.1:65002"
+#define SPARROW_ENDPOINT "127.0.0.1:65003"
 
 struct electrum_setup_fixture
+  : rpc_setup_fixture
 {
     DELETE_COPY_MOVE(electrum_setup_fixture);
 
     using initializer = std::function<bool(test::query_t&)>;
     using configurator = std::function<void(configuration&)>;
+    /// The service configured and exercised (each has its own binding).
+    enum class service { electrum, sparrow };
+
     explicit electrum_setup_fixture(const initializer& setup,
-        bool address_index=true, const configurator& configure={});
+        bool address_index=true, const configurator& configure={},
+        service which=service::electrum);
     ~electrum_setup_fixture();
 
+    // json-rpc over the raw tcp stream (downgrades the connection).
     boost::json::value receive();
     int64_t get_error(const std::string& request);
     boost::json::value get(const std::string& request);
     bool handshake(electrum::version version,
         const std::string& name="test", network::rpc::code_t id={});
 
-    // 0_32 vs {} for xcode variant issue.
-    void notify(node::chase event_, node::event_value value=0_u32);
+    // json-rpc over http POST to "/" (the connection remains http).
+    boost::json::value post(const std::string& request);
+    bool post_handshake(electrum::version version,
+        const std::string& name="test", network::rpc::code_t id={});
 
-protected:
-    configuration config_;
-    test::store_t store_;
-    test::query_t query_;
+    // Upgrade the connection to websocket (no further http requests).
+    network::boost_code ws_upgrade();
+
+    // json-rpc over the upgraded websocket connection.
+    boost::json::value ws_get(const std::string& request);
+    bool ws_handshake(electrum::version version,
+        const std::string& name="test", network::rpc::code_t id={});
+
+    // Read one unsolicited frame (notification) from the websocket.
+    boost::json::value ws_receive();
 
 private:
-    network::logger log_;
-    server::server_node server_;
-    boost::asio::io_context io{};
-    boost::asio::ip::tcp::socket socket_{ io };
-    boost::asio::streambuf stream_{};
+    // Verify the server.version response of any transport.
+    bool verify(const boost::json::value& response, electrum::version version,
+        network::rpc::code_t id) const;
+
+    // The settings of the configured service (electrum or sparrow).
+    const server::settings::electrum_server& options() const;
+
+    const service which_;
+    rpc_client client_{ io_ };
 };
 
 struct electrum_ten_block_setup_fixture
@@ -64,6 +85,20 @@ struct electrum_ten_block_setup_fixture
         {
             return test::setup_ten_block_store(query);
         })
+    {
+    }
+};
+
+/// The sparrow service, which reuses this harness (same transports, same
+/// handshake, same electrum interface).
+struct sparrow_ten_block_setup_fixture
+  : electrum_setup_fixture
+{
+    inline sparrow_ten_block_setup_fixture()
+      : electrum_setup_fixture([](test::query_t& query)
+        {
+            return test::setup_ten_block_store(query);
+        }, true, {}, service::sparrow)
     {
     }
 };

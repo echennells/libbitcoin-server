@@ -135,6 +135,7 @@
     <ClCompile Include="..\..\..\..\src\parsers\bitcoind_target.cpp" />
     <ClCompile Include="..\..\..\..\src\parsers\bitcoind_transaction.cpp" />
     <ClCompile Include="..\..\..\..\src\parsers\btcd_filter.cpp" />
+    <ClCompile Include="..\..\..\..\src\parsers\electrum_request.cpp" />
     <ClCompile Include="..\..\..\..\src\parsers\native_query.cpp" />
     <ClCompile Include="..\..\..\..\src\parsers\native_target.cpp" />
     <ClCompile Include="..\..\..\..\src\protocols\admin\protocol_admin.cpp" />
@@ -176,6 +177,7 @@
     <ClCompile Include="..\..\..\..\src\protocols\protocol.cpp" />
     <ClCompile Include="..\..\..\..\src\protocols\protocol_html.cpp" />
     <ClCompile Include="..\..\..\..\src\protocols\protocol_http.cpp" />
+    <ClCompile Include="..\..\..\..\src\protocols\sparrow\protocol_sparrow.cpp" />
     <ClCompile Include="..\..\..\..\src\protocols\stratum_v1\protocol_stratum_v1.cpp" />
     <ClCompile Include="..\..\..\..\src\serializers\bitcoind_block_stats.cpp" />
     <ClCompile Include="..\..\..\..\src\serializers\bitcoind_coin.cpp" />
@@ -196,9 +198,13 @@
     <ClInclude Include="..\..\..\..\builds\msvc\resource.h" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\channels\channel.hpp" />
+    <ClInclude Include="..\..\..\..\include\bitcoin\server\channels\channel_bitcoind.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\channels\channel_bitcoind_zmq.hpp" />
+    <ClInclude Include="..\..\..\..\include\bitcoin\server\channels\channel_btcd.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\channels\channel_electrum.hpp" />
+    <ClInclude Include="..\..\..\..\include\bitcoin\server\channels\channel_html.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\channels\channel_http.hpp" />
+    <ClInclude Include="..\..\..\..\include\bitcoin\server\channels\channel_rpc.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\channels\channel_stratum_v1.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\channels\channel_stratum_v2.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\channels\channels.hpp" />
@@ -225,6 +231,7 @@
     <ClInclude Include="..\..\..\..\include\bitcoin\server\interfaces\electrum.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\interfaces\interfaces.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\interfaces\native.hpp" />
+    <ClInclude Include="..\..\..\..\include\bitcoin\server\interfaces\sparrow.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\interfaces\stratum_v1.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\interfaces\stratum_v2.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\interfaces\types.hpp" />
@@ -237,6 +244,7 @@
     <ClInclude Include="..\..\..\..\include\bitcoin\server\parsers\bitcoind_target.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\parsers\bitcoind_transaction.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\parsers\btcd_filter.hpp" />
+    <ClInclude Include="..\..\..\..\include\bitcoin\server\parsers\electrum_request.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\parsers\native_query.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\parsers\native_target.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\parsers\parsers.hpp" />
@@ -262,6 +270,7 @@
     <ClInclude Include="..\..\..\..\include\bitcoin\server\protocols\protocol_http.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\protocols\protocol_native.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\protocols\protocol_rpc.hpp" />
+    <ClInclude Include="..\..\..\..\include\bitcoin\server\protocols\protocol_sparrow.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\protocols\protocol_stratum_v1.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\protocols\protocol_stratum_v2.hpp" />
     <ClInclude Include="..\..\..\..\include\bitcoin\server\protocols\protocols.hpp" />

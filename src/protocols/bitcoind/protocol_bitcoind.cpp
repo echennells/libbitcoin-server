@@ -63,7 +63,7 @@ void protocol_bitcoind::handle_receive_get(const code& ec,
 
 // Handled here for rpc and derived rest protocol.
 void protocol_bitcoind::handle_receive_options(const code& ec,
-    const options::cptr& options) NOEXCEPT
+    const options_verb::cptr& options) NOEXCEPT
 {
     BC_ASSERT(stranded());
 
@@ -274,7 +274,8 @@ void protocol_bitcoind::send_rpc(response_t&& model, size_t size_hint,
     const auto notification = (model.jsonrpc == version::v2) &&
         !model.id.has_value();
 
-    if (websocket())
+    // ws frames and a tcp downgrade carry no http envelope.
+    if (websocket() || downgraded())
     {
         id_.reset();
         version_ = version::undefined;

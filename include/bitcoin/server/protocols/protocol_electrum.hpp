@@ -32,17 +32,19 @@ namespace libbitcoin {
 namespace server {
 
 class BCS_API protocol_electrum
-  : public protocol_rpc<channel_electrum>,
+  : public protocol_rpc<interface::electrum>,
     protected network::tracker<protocol_electrum>
 {
 public:
     typedef std::shared_ptr<protocol_electrum> ptr;
     using rpc_interface = interface::electrum;
+    using channel_t = channel_electrum;
+    using options_t = channel_t::options_t;
 
     inline protocol_electrum(const auto& session,
         const network::channel::ptr& channel,
         const options_t& options) NOEXCEPT
-      : protocol_rpc<channel_electrum>(session, channel, options),
+      : protocol_rpc<interface::electrum>(session, channel, options),
         options_(options),
         turbo_(session->database_settings().turbo),
         p2kh_(session->server_settings().wallet.p2kh_prefix),
@@ -51,6 +53,8 @@ public:
         witness_(session->server_settings().wallet.witness_prefix),
         channel_(std::dynamic_pointer_cast<channel_t>(channel)),
         notification_strand_(channel_->service().get_executor()),
+        ping_timer_(std::make_shared<network::deadline>(session->log,
+            channel->strand())),
         network::tracker<protocol_electrum>(session->log)
     {
     }
@@ -59,6 +63,17 @@ public:
     void stopping(const code& ec) NOEXCEPT override;
 
 protected:
+    void start_ping() NOEXCEPT;
+    void handle_ping(const code& ec) NOEXCEPT;
+
+    /// Terminal responder (attached last) for unclaimed methods.
+    void handle_unclaimed(
+        const network::rpc::request_t& request) NOEXCEPT override;
+
+    /// Override to decorate the server.features response (see sparrow).
+    virtual void add_features(
+        network::rpc::object_t& features) const NOEXCEPT;
+
     /// Event handlers.
     bool handle_chase(const code&, node::chase event_,
         node::event_value) NOEXCEPT;
@@ -172,6 +187,9 @@ protected:
     void handle_blockchain_transaction_get_merkle(const code& ec,
         rpc_interface::blockchain_transaction_get_merkle,
         const std::string& tx_hash, double height) NOEXCEPT;
+    void handle_blockchain_transaction_testmempoolaccept(const code& ec,
+        rpc_interface::blockchain_transaction_testmempoolaccept,
+        const interface::value_t& raw_txs) NOEXCEPT;
     void handle_blockchain_transaction_id_from_position(const code& ec,
         rpc_interface::blockchain_transaction_id_from_position, double height,
         double tx_pos, bool merkle) NOEXCEPT;
@@ -192,18 +210,19 @@ protected:
         rpc_interface::server_ping, double pong_len,
         const std::string& data) NOEXCEPT;
 
-    /// See protocol_electrum_version.
-    ////void handle_server_version(const code& ec,
-    ////    rpc_interface::server_version, const std::string& client_name,
-    ////    const interface::value_t& protocol_version) NOEXCEPT;
-
     /// Handlers (mempool).
     void handle_mempool_get_fee_histogram(const code& ec,
         rpc_interface::mempool_get_fee_histogram) NOEXCEPT;
+    void handle_mempool_recent(const code& ec,
+        rpc_interface::mempool_recent) NOEXCEPT;
     void handle_mempool_get_info(const code& ec,
         rpc_interface::mempool_get_info) NOEXCEPT;
 
 protected:
+    // Aliases (protected, as derived services build the same responses).
+    using array_t = network::rpc::array_t;
+    using object_t = network::rpc::object_t;
+
     using point = system::chain::point;
     using hash_digest = system::hash_digest;
     using history = database::history;
@@ -241,23 +260,23 @@ protected:
     /// -----------------------------------------------------------------------
 
     void get_balance(const hash_digest& hash) NOEXCEPT;
-    void get_history(const hash_digest& hash) NOEXCEPT;
-    void get_mempool(const hash_digest& hash) NOEXCEPT;
-    void list_unspent(const hash_digest& hash) NOEXCEPT;
+    void get_history(const hash_digest& hash, bool wrap=false) NOEXCEPT;
+    void get_mempool(const hash_digest& hash, bool wrap=false) NOEXCEPT;
+    void list_unspent(const hash_digest& hash, bool wrap=false) NOEXCEPT;
 
     void do_get_balance(const hash_digest& hash) NOEXCEPT;
-    void do_get_history(const hash_digest& hash) NOEXCEPT;
-    void do_get_mempool(const hash_digest& hash) NOEXCEPT;
-    void do_list_unspent(const hash_digest& hash) NOEXCEPT;
+    void do_get_history(const hash_digest& hash, bool wrap) NOEXCEPT;
+    void do_get_mempool(const hash_digest& hash, bool wrap) NOEXCEPT;
+    void do_list_unspent(const hash_digest& hash, bool wrap) NOEXCEPT;
 
     void complete_get_balance(const code& ec, uint64_t confirmed,
         int64_t unconfirmed) NOEXCEPT;
     void complete_get_history(const code& ec, const hash_digest& scripthash,
-        const histories& histories) NOEXCEPT;
+        const histories& histories, bool wrap) NOEXCEPT;
     void complete_get_mempool(const code& ec, const hash_digest& scripthash,
-        const histories& histories) NOEXCEPT;
+        const histories& histories, bool wrap) NOEXCEPT;
     void complete_list_unspent(const code& ec,
-        const unspent_outputs& unspents) NOEXCEPT;
+        const unspent_outputs& unspents, bool wrap) NOEXCEPT;
 
     void handle_estimate_fee(const code& ec, uint64_t fee) NOEXCEPT;
     void complete_estimate_fee(const code& ec, uint64_t fee) NOEXCEPT;
@@ -319,10 +338,6 @@ protected:
     }
 
 private:
-    // Aliases.
-    using array_t = network::rpc::array_t;
-    using object_t = network::rpc::object_t;
-
     // Post to notification strand.
     template <class Derived, typename Method, typename... Args>
     inline auto notify(Method&& method, Args&&... args) NOEXCEPT
@@ -366,6 +381,8 @@ private:
         bool verbose) NOEXCEPT;
 
     // Append txs retained by this channel's broadcast to unconfirmed history.
+    static network::rpc::value_t wrapped(array_t&& out,
+        const network::rpc::string_t& key, bool wrap) NOEXCEPT;
     void append_retained(array_t& out,
         const hash_digest& scripthash) const NOEXCEPT;
     static bool touches(const system::chain::transaction& tx,
@@ -378,6 +395,7 @@ private:
     const uint8_t p2sh_;
     const uint32_t flags_;
     const std::string witness_;
+    network::deadline::ptr ping_timer_;
     std::atomic_bool stopping_{};
     std::atomic_bool subscribed_height_{};
     std::atomic_bool subscribed_header_{};

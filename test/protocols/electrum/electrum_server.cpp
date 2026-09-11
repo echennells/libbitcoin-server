@@ -26,6 +26,18 @@ static const code wrong_version{ server::error::electrum::bad_request };
 static const code not_implemented{ server::error::electrum::method_not_found };
 static const code invalid_argument{ server::error::electrum::bad_request };
 
+// unknown method
+
+BOOST_AUTO_TEST_CASE(electrum__unknown_method__v1_0__method_not_found)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_0));
+
+    const auto response = get(R"({"id":399,"method":"server.bogus","params":[]})" "\n");
+    REQUIRE_NO_THROW_TRUE(response.at("error").as_object().at("code").is_int64());
+    BOOST_REQUIRE_EQUAL(response.at("error").as_object().at("code").as_int64(), not_implemented.value());
+    BOOST_REQUIRE_EQUAL(response.at("id").as_int64(), 399);
+}
+
 // server.add_peer
 
 BOOST_AUTO_TEST_CASE(electrum__server_add_peer__insufficient_version__wrong_version)
@@ -71,6 +83,7 @@ BOOST_AUTO_TEST_CASE(electrum__server_banner__jsonrpc_unspecified_empty_params__
     BOOST_REQUIRE(handshake(electrum::version::v1_2));
 
     const auto response = get(R"({"id":42,"method":"server.banner","params":[]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
     BOOST_REQUIRE_EQUAL(response.at("result").as_string(), "banner_message");
 }
@@ -80,6 +93,7 @@ BOOST_AUTO_TEST_CASE(electrum__server_banner__jsonrpc_1__expected)
     BOOST_REQUIRE(handshake(electrum::version::v1_2));
 
     const auto response = get(R"({"jsonrpc":"1.0","id":42,"method":"server.banner","params":[]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
     BOOST_REQUIRE_EQUAL(response.at("result").as_string(), "banner_message");
 }
@@ -89,6 +103,7 @@ BOOST_AUTO_TEST_CASE(electrum__server_banner__jsonrpc_2__expected)
     BOOST_REQUIRE(handshake(electrum::version::v1_2));
 
     const auto response = get(R"({"jsonrpc":"2.0","id":42,"method":"server.banner"})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
     BOOST_REQUIRE_EQUAL(response.at("result").as_string(), "banner_message");
 }
@@ -100,6 +115,7 @@ BOOST_AUTO_TEST_CASE(electrum__server_donation_address__jsonrpc_1__expected)
     BOOST_REQUIRE(handshake(electrum::version::v1_2));
 
     const auto response = get(R"({"jsonrpc":"1.0","id":43,"method":"server.donation_address","params":[]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
     BOOST_REQUIRE_EQUAL(response.at("result").as_string(), "donation_address");
 }
@@ -109,6 +125,7 @@ BOOST_AUTO_TEST_CASE(electrum__server_donation_address__jsonrpc_2__expected)
     BOOST_REQUIRE(handshake(electrum::version::v1_2));
 
     const auto response = get(R"({"jsonrpc":"2.0","id":43,"method":"server.donation_address"})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
     BOOST_REQUIRE_EQUAL(response.at("result").as_string(), "donation_address");
 }
@@ -136,6 +153,7 @@ BOOST_AUTO_TEST_CASE(electrum__server_features__default_hosts__expected)
     BOOST_REQUIRE(handshake(electrum::version::v1_4));
 
     const auto response = get(R"({"id":300,"method":"server.features","params":[]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_object());
 
     const auto& result = response.at("result").as_object();
@@ -171,6 +189,7 @@ BOOST_AUTO_TEST_CASE(electrum__server_features__v1_7__hash_function_removed)
     BOOST_REQUIRE(handshake(electrum::version::v1_7));
 
     const auto response = get(R"({"id":300,"method":"server.features","params":[]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_object());
 
     const auto& result = response.at("result").as_object();
@@ -188,6 +207,7 @@ BOOST_AUTO_TEST_CASE(electrum__server_features__method_flavours_v1_7__supports_v
     BOOST_REQUIRE(handshake(electrum::version::v1_7));
 
     const auto response = get(R"({"id":300,"method":"server.features","params":[]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_object());
 
     const auto& result = response.at("result").as_object();
@@ -208,6 +228,7 @@ BOOST_AUTO_TEST_CASE(electrum__server_features__hosts__expected)
     BOOST_REQUIRE(handshake(electrum::version::v1_0));
 
     const auto response = get(R"({"id":300,"method":"server.features","params":[]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_object());
 
     const auto& result = response.at("result").as_object();
@@ -238,6 +259,7 @@ BOOST_AUTO_TEST_CASE(electrum__server_peers_subscribe__empty_params__empty_array
     BOOST_REQUIRE(handshake(electrum::version::v1_2));
 
     const auto response = get(R"({"id":503,"method":"server.peers.subscribe","params":[]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_array());
     BOOST_REQUIRE(response.at("result").as_array().empty());
 }
@@ -250,6 +272,7 @@ BOOST_AUTO_TEST_CASE(electrum__server_peers_subscribe__configured_peers__expecte
     BOOST_REQUIRE(handshake(electrum::version::v1_2));
 
     const auto response = get(R"({"id":504,"method":"server.peers.subscribe","params":[]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_array());
 
     const auto& peers = response.at("result").as_array();
@@ -309,27 +332,40 @@ BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_2_defaults__null)
     BOOST_REQUIRE(handshake(electrum::version::v1_2));
 
     const auto response = get(R"({"id":200,"method":"server.ping","params":[]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_null());
 }
 
-BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7_defaults__null)
+BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_2_arguments__null)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_2));
+
+    const auto response = get(R"({"id":202,"method":"server.ping","params":[8,"12345678"]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_null());
+}
+
+BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7_defaults__empty_data)
 {
     BOOST_REQUIRE(handshake(electrum::version::v1_7));
 
     const auto response = get(R"({"id":210,"method":"server.ping","params":[]})" "\n");
-    REQUIRE_NO_THROW_TRUE(response.at("result").is_null());
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").at("data").is_string());
+    BOOST_REQUIRE_EQUAL(response.at("result").at("data").as_string(), "");
 }
 
-// This may not be strictly compliant behavior (possibly empty string is correct).
-BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7_default_values__null)
+BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7_zero_length__empty_data)
 {
     BOOST_REQUIRE(handshake(electrum::version::v1_7));
 
-    const auto response = get(R"({"id":210,"method":"server.ping","params":[0,""]})" "\n");
-    REQUIRE_NO_THROW_TRUE(response.at("result").is_null());
+    const auto response = get(R"({"id":212,"method":"server.ping","params":[0,""]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").at("data").is_string());
+    BOOST_REQUIRE_EQUAL(response.at("result").at("data").as_string(), "");
 }
 
-BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7__invalid_data_encoding__invalid_argument)
+BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7_invalid_data_encoding__invalid_argument)
 {
     BOOST_REQUIRE(handshake(electrum::version::v1_7));
 
@@ -337,21 +373,40 @@ BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7__invalid_data_encoding__invalid
     BOOST_REQUIRE_EQUAL(result, invalid_argument.value());
 }
 
-BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7__mismatched_data_length__invalid_argument)
+BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7_odd_length_data__expected)
 {
     BOOST_REQUIRE(handshake(electrum::version::v1_7));
 
-    const auto result = get_error(R"({"id":213,"method":"server.ping","params":[5,"12345678"]})" "\n");
-    BOOST_REQUIRE_EQUAL(result, invalid_argument.value());
+    const auto response = get(R"({"id":216,"method":"server.ping","params":[2,"abc"]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    BOOST_REQUIRE_EQUAL(response.at("result").at("data").as_string(), "00");
 }
 
-BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7_data__expected_echo)
+BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7_length_under_data__expected)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_7));
+
+    const auto response = get(R"({"id":213,"method":"server.ping","params":[5,"12345678"]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    BOOST_REQUIRE_EQUAL(response.at("result").at("data").as_string(), "00000");
+}
+
+BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7_excessive_length__truncated)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_7));
+
+    const auto response = get(R"({"id":217,"method":"server.ping","params":[1000000,""]})" "\n");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    BOOST_REQUIRE_EQUAL(response.at("result").at("data").as_string().size(), 1024u);
+}
+
+BOOST_AUTO_TEST_CASE(electrum__server_ping__v1_7_data__expected)
 {
     BOOST_REQUIRE(handshake(electrum::version::v1_7));
 
     const auto response = get(R"({"id":214,"method":"server.ping","params":[8,"12345678"]})" "\n");
-    REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
-    BOOST_REQUIRE_EQUAL(response.at("result").as_string(), "00000000");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    BOOST_REQUIRE_EQUAL(response.at("result").at("data").as_string(), "00000000");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -30,7 +30,8 @@ from utils import (
 def send_rpc(
     config: dict,
     method: str,
-    params: Optional[list] = None
+    params: Optional[list] = None,
+    timeout: Optional[float] = None
 ) -> Dict[str, Any]:
     """
     Send JSON-RPC 2.0 request to bitcoind-compatible endpoint.
@@ -39,6 +40,7 @@ def send_rpc(
         config: Configuration dictionary with url, auth, timeout
         method: RPC method name
         params: Optional list of parameters
+        timeout: Overrides the configured timeout (for long scans)
 
     Returns:
         JSON-RPC response dictionary
@@ -64,7 +66,8 @@ def send_rpc(
             json=payload,
             headers={"Content-Type": "application/json", "Connection": "close"},
             auth=config.get("auth"),
-            timeout=config.get("timeout", TestConfig.DEFAULT_RPC_TIMEOUT)
+            timeout=timeout if timeout is not None else
+                config.get("timeout", TestConfig.DEFAULT_RPC_TIMEOUT)
         )
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
@@ -350,7 +353,10 @@ def test_gettxout(bitcoind_rpc_config):
 
 def test_gettxoutsetinfo(bitcoind_rpc_config):
     """Test gettxoutsetinfo - returns statistics about the unspent transaction output set"""
-    response = send_rpc(bitcoind_rpc_config, "gettxoutsetinfo")
+    # A whole-set scan, so it runs far longer than an ordinary query (see
+    # --scan-timeout). The channel is governed by the server inactivity limit.
+    response = send_rpc(bitcoind_rpc_config, "gettxoutsetinfo",
+        timeout=bitcoind_rpc_config["scan_timeout"])
 
     result = response["result"]
     assert isinstance(result, dict)
@@ -430,8 +436,26 @@ def test_verifytxoutset(bitcoind_rpc_config):
 # RAW TRANSACTION METHODS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def test_getrawtransaction_raw(bitcoind_rpc_config):
+
+@pytest.fixture(scope="module")
+def pruned(bitcoind_rpc_config) -> bool:
+    """
+    True when the node is pruned.
+
+    A pruned store archives no input script or witness data, so a served
+    transaction carries empty inputs and cannot hash to its own txid.
+    """
+    response = send_rpc(bitcoind_rpc_config, "getblockchaininfo")
+    return bool(response["result"].get("pruned", False))
+
+
+PRUNED_REASON = "pruned node: input script and witness data are not archived"
+
+def test_getrawtransaction_raw(bitcoind_rpc_config, pruned):
     """getrawtransaction verbosity=0 returns the serialized transaction hex."""
+    if pruned:
+        pytest.skip(PRUNED_REASON)
+
     # Block 170 transaction (first payment, non-segwit) round-trips to its txid.
     response = send_rpc(
         bitcoind_rpc_config,
@@ -466,8 +490,11 @@ def test_getrawtransaction_verbose(bitcoind_rpc_config):
     assert isinstance(result["confirmations"], int) and result["confirmations"] > 0
 
 
-def test_getrawtransaction_coinbase(bitcoind_rpc_config):
+def test_getrawtransaction_coinbase(bitcoind_rpc_config, pruned):
     """getrawtransaction serves coinbase transactions (block 1 coinbase)."""
+    if pruned:
+        pytest.skip(PRUNED_REASON)
+
     response = send_rpc(
         bitcoind_rpc_config,
         "getrawtransaction",
@@ -483,8 +510,11 @@ def test_getrawtransaction_coinbase(bitcoind_rpc_config):
         assert result["hash"] == result["txid"]
 
 
-def test_getrawtransaction_segwit(bitcoind_rpc_config):
+def test_getrawtransaction_segwit(bitcoind_rpc_config, pruned):
     """getrawtransaction handles segwit transactions (witness serialization)."""
+    if pruned:
+        pytest.skip(PRUNED_REASON)
+
     response = send_rpc(
         bitcoind_rpc_config,
         "getrawtransaction",

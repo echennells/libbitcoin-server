@@ -40,6 +40,7 @@
 #include <bitcoin/server/protocols/protocol_html.hpp>
 #include <bitcoin/server/protocols/protocol_http.hpp>
 #include <bitcoin/server/protocols/protocol_rpc.hpp>
+#include <bitcoin/server/protocols/protocol_sparrow.hpp>
 #include <bitcoin/server/protocols/protocol_stratum_v1.hpp>
 #include <bitcoin/server/protocols/protocol_stratum_v2.hpp>
 #include <bitcoin/server/protocols/protocol_admin.hpp>
@@ -57,9 +58,8 @@ and html are not independent subclasses (operate within http).
 network::protocol
 ├── [server:protocol_stratum_v2]
 ├── protocol_rpc<Channel>
-│   ├── [server::protocol_rpc<server::channel_stratum_v1>]
-│   ├── [server::protocol_rpc<server::channel_electrum>]
-│   └── [server::protocol_rpc<server::channel_bitcoind_zmq>]
+│   ├── [server::protocol_stratum_v1]
+│   └── [server::protocol_bitcoind_zmq]
 ├── protocol_http
 │   └── [server::protocol_http]
 └── protocol_peer
@@ -95,17 +95,18 @@ node::protocol
 
 server::protocol → node::protocol
 ├── protocol_stratum_v2                → network::protocol
-├── protocol_rpc<channel_stratum_v1>   → network::protocol_rpc<channel_stratum_v1>
-│   └── protocol_stratum_v1
-├── protocol_rpc<channel_electrum>     → network::protocol_rpc<channel_electrum>
-│   ├── protocol_electrum
-│   └── protocol_electrum_version
-├── protocol_rpc<channel_bitcoind_zmq> → network::protocol_rpc<channel_bitcoind_zmq>
-│   └── protocol_bitcoind_zmq
+├── protocol_stratum_v1                → network::protocol_rpc<channel_stratum_v1>
+├── protocol_bitcoind_zmq              → network::protocol_rpc<channel_bitcoind_zmq>
 └── protocol_http                      → network::protocol_http
     ├── protocol_html
     │   ├── protocol_admin
     │   └── protocol_native
+    ├── protocol_rpc<Interface> (universal json-rpc, dispatch by interface)
+    │   ╞══ protocol_rpc<electrum_handshake>
+    │   │   └── protocol_electrum_version (handshake, attached first)
+    │   ╘══ protocol_rpc<electrum>
+    │       └── protocol_electrum (terminal responder, attached last)
+    │           └── protocol_sparrow (+ dispatcher<sparrow>)
     └── protocol_bitcoind (common base and terminal default responder)
         ├── protocol_bitcoind_dispatch<Interface>
         │   ╞══ protocol_bitcoind_dispatch<bitcoind_blockchain>

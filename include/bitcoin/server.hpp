@@ -22,9 +22,13 @@
 #include <bitcoin/server/settings.hpp>
 #include <bitcoin/server/version.hpp>
 #include <bitcoin/server/channels/channel.hpp>
+#include <bitcoin/server/channels/channel_bitcoind.hpp>
 #include <bitcoin/server/channels/channel_bitcoind_zmq.hpp>
+#include <bitcoin/server/channels/channel_btcd.hpp>
 #include <bitcoin/server/channels/channel_electrum.hpp>
+#include <bitcoin/server/channels/channel_html.hpp>
 #include <bitcoin/server/channels/channel_http.hpp>
+#include <bitcoin/server/channels/channel_rpc.hpp>
 #include <bitcoin/server/channels/channel_stratum_v1.hpp>
 #include <bitcoin/server/channels/channel_stratum_v2.hpp>
 #include <bitcoin/server/channels/channels.hpp>
@@ -49,6 +53,7 @@
 #include <bitcoin/server/interfaces/electrum.hpp>
 #include <bitcoin/server/interfaces/interfaces.hpp>
 #include <bitcoin/server/interfaces/native.hpp>
+#include <bitcoin/server/interfaces/sparrow.hpp>
 #include <bitcoin/server/interfaces/stratum_v1.hpp>
 #include <bitcoin/server/interfaces/stratum_v2.hpp>
 #include <bitcoin/server/interfaces/types.hpp>
@@ -60,6 +65,7 @@
 #include <bitcoin/server/parsers/bitcoind_target.hpp>
 #include <bitcoin/server/parsers/bitcoind_transaction.hpp>
 #include <bitcoin/server/parsers/btcd_filter.hpp>
+#include <bitcoin/server/parsers/electrum_request.hpp>
 #include <bitcoin/server/parsers/native_query.hpp>
 #include <bitcoin/server/parsers/native_target.hpp>
 #include <bitcoin/server/parsers/parsers.hpp>
@@ -85,6 +91,7 @@
 #include <bitcoin/server/protocols/protocol_http.hpp>
 #include <bitcoin/server/protocols/protocol_native.hpp>
 #include <bitcoin/server/protocols/protocol_rpc.hpp>
+#include <bitcoin/server/protocols/protocol_sparrow.hpp>
 #include <bitcoin/server/protocols/protocol_stratum_v1.hpp>
 #include <bitcoin/server/protocols/protocol_stratum_v2.hpp>
 #include <bitcoin/server/protocols/protocols.hpp>

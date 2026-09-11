@@ -31,17 +31,19 @@ namespace libbitcoin {
 namespace server {
 
 class BCS_API protocol_electrum_version
-  : public protocol_rpc<channel_electrum>,
+  : public protocol_rpc<interface::electrum_handshake>,
     protected network::tracker<protocol_electrum_version>
 {
 public:
     typedef std::shared_ptr<protocol_electrum_version> ptr;
-    using rpc_interface = interface::electrum;
+    using rpc_interface = interface::electrum_handshake;
+    using channel_t = channel_electrum;
+    using options_t = channel_t::options_t;
 
     inline protocol_electrum_version(const auto& session,
         const network::channel::ptr& channel,
         const options_t& options) NOEXCEPT
-      : protocol_rpc<channel_electrum>(session, channel, options),
+      : protocol_rpc<interface::electrum_handshake>(session, channel, options),
         options_(options),
         channel_(std::dynamic_pointer_cast<channel_t>(channel)),
         network::tracker<protocol_electrum_version>(session->log)
@@ -52,22 +54,16 @@ public:
     virtual void finished(const code& ec, const code& shake) NOEXCEPT;
 
 protected:
-    static constexpr size_t max_client_name_length = 1024;
+    void handle_unclaimed(
+        const network::rpc::request_t& message) NOEXCEPT override;
 
     void handle_server_version(const code& ec,
         rpc_interface::server_version, const std::string& client_name,
         const interface::value_t& protocol_version) NOEXCEPT;
 
-    std::string negotiated_version() const NOEXCEPT;
     bool set_version(const interface::value_t& version) NOEXCEPT;
-    bool get_versions(system::config::version& min,
-        system::config::version& max,
-        const interface::value_t& version) NOEXCEPT;
-
-    std::string_view server_name() const NOEXCEPT;
-    std::string_view client_name() const NOEXCEPT;
-    std::string escape_client(const std::string& in) NOEXCEPT;
     bool set_client(const std::string& name) NOEXCEPT;
+    std::string_view client_name() const NOEXCEPT;
 
     inline const options_t& options() const NOEXCEPT
     {

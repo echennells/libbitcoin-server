@@ -48,6 +48,7 @@ parser::parser(system::chain::selection context,
 
     configured.network.enable_relay = true;
     configured.network.enable_address = true;
+    configured.network.enable_not_found = false;
     configured.network.enable_address_v2 = false;
     configured.network.enable_witness_tx = false;
     configured.network.enable_compact = false;
@@ -655,6 +656,11 @@ options_metadata parser::load_settings() THROWS
         "Enable reject messages, defaults to 'false'."
     )
     (
+        "peer.enable_not_found",
+        value<bool>(&configured.network.enable_not_found),
+        "Enable not found messages, defaults to 'true'."
+    )
+    (
         "peer.enable_relay",
         value<bool>(&configured.network.enable_relay),
         "Enable transaction relay, defaults to 'true'."
@@ -903,9 +909,24 @@ options_metadata parser::load_settings() THROWS
         "The pay-to-script-hash address prefix, defaults to '5' (use '196' for testnet)."
     )
     (
+        "wallet.wif_prefix",
+        value<config::byte>(&configured.server.wallet.wif_prefix),
+        "The wallet import format prefix, defaults to '128' (use '239' for testnet)."
+    )
+    (
         "wallet.witness_prefix",
         value<std::string>(&configured.server.wallet.witness_prefix),
         "The witness address prefix, defaults to 'bc' (use 'tb' for testnet)."
+    )
+    (
+        "wallet.hd_private_prefix",
+        value<uint32_t>(&configured.server.wallet.hd_private_prefix),
+        "The extended private key prefix, defaults to '76066276' (use '70615956' for testnet)."
+    )
+    (
+        "wallet.hd_public_prefix",
+        value<uint32_t>(&configured.server.wallet.hd_public_prefix),
+        "The extended public key prefix, defaults to '76067358' (use '71979618' for testnet)."
     )
 
     /* [admin] */
@@ -1353,6 +1374,16 @@ options_metadata parser::load_settings() THROWS
         "The maximum allowed address subscriptions per channel, defaults to '1000000'."
     )
     (
+        "electrum.ping_interval_seconds",
+        value<uint32_t>(&configured.server.electrum.ping_interval_seconds),
+        "The seconds between unrequested pings, defaults to '0' (disabled)."
+    )
+    (
+        "electrum.ping_size",
+        value<uint32_t>(&configured.server.electrum.ping_size),
+        "The hex characters of unrequested ping data, defaults to '0'."
+    )
+    (
         "electrum.protocol_minimum",
         value<version>(&configured.server.electrum.protocol_minimum),
         "Minimum protocol version, defaults to '1.0'."
@@ -1398,6 +1429,127 @@ options_metadata parser::load_settings() THROWS
         "Advertised secure host:port at which another server can be reached (defaults to empty)."
     )
 
+    /* [sparrow] */
+    (
+        "sparrow.bind",
+        value<network::config::authorities>(&configured.server.sparrow.binds),
+        "IP address to bind, multiple allowed, defaults to empty (disabled)."
+    )
+    (
+        "sparrow.safe",
+        value<network::config::authorities>(&configured.server.sparrow.safes),
+        "IP address to secure bind, multiple allowed, defaults to empty (disabled)."
+    )
+    (
+        "sparrow.cert_path",
+        value<std::filesystem::path>(&configured.server.sparrow.cert_path),
+        "The path to the server certificate file (.PEM), defaults to unused."
+    )
+    (
+        "sparrow.key_path",
+        value<std::filesystem::path>(&configured.server.sparrow.key_path),
+        "The path to the server private key file (.PEM), defaults to unused."
+    )
+    (
+        "sparrow.connections",
+        value<uint16_t>(&configured.server.sparrow.connections),
+        "The required maximum number of connections, defaults to '0'."
+    )
+    (
+        "sparrow.inactivity_minutes",
+        value<uint32_t>(&configured.server.sparrow.inactivity_minutes),
+        "The idle timeout (http keep-alive), defaults to '10'."
+    )
+    (
+        "sparrow.expiration_minutes",
+        value<uint32_t>(&configured.server.sparrow.expiration_minutes),
+        "The idle timeout (http keep-alive), defaults to '60'."
+    )
+    (
+        "sparrow.minimum_buffer",
+        value<uint32_t>(&configured.server.sparrow.minimum_buffer),
+        "The minimum retained read buffer size, defaults to '4000000'."
+    )
+    (
+        "sparrow.maximum_request",
+        value<uint32_t>(&configured.server.sparrow.maximum_request),
+        "The maximum allowed request size, defaults to '4000000'."
+    )
+    (
+        "sparrow.rate_limit",
+        value<uint32_t>(&configured.server.sparrow.rate_limit),
+        "The send rate limit in bytes per second, defaults to '0' (unlimited)."
+    )
+    (
+        "sparrow.maximum_headers",
+        value<uint32_t>(&configured.server.sparrow.maximum_headers),
+        "The maximum allowed headers returned per request, defaults to '20160'."
+    )
+    (
+        "sparrow.maximum_history",
+        value<uint32_t>(&configured.server.sparrow.maximum_history),
+        "The maximum number of address history entries upon one subscription, defaults to '1000000'."
+    )
+    (
+        "sparrow.maximum_subscriptions",
+        value<uint32_t>(&configured.server.sparrow.maximum_subscriptions),
+        "The maximum allowed address subscriptions per channel, defaults to '1000000'."
+    )
+    (
+        "sparrow.ping_interval_seconds",
+        value<uint32_t>(&configured.server.sparrow.ping_interval_seconds),
+        "The seconds between unrequested pings, defaults to '0' (disabled)."
+    )
+    (
+        "sparrow.ping_size",
+        value<uint32_t>(&configured.server.sparrow.ping_size),
+        "The hex characters of unrequested ping data, defaults to '0'."
+    )
+    (
+        "sparrow.protocol_minimum",
+        value<version>(&configured.server.sparrow.protocol_minimum),
+        "Minimum protocol version, defaults to '1.0'."
+    )
+    (
+        "sparrow.protocol_maximum",
+        value<version>(&configured.server.sparrow.protocol_maximum),
+        "Maximum protocol version, defaults to '1.7'."
+    )
+    (
+        "sparrow.server_name",
+        value<std::string>(&configured.server.sparrow.server_name),
+        "String returned by server.version, defaults to '" BC_USER_AGENT "'."
+    )
+    (
+        "sparrow.donation_address",
+        value<std::string>(&configured.server.sparrow.donation_address),
+        "String returned by server.donation_address, defaults to empty."
+    )
+    (
+        "sparrow.banner_message",
+        value<std::string>(&configured.server.sparrow.banner_message),
+        "String returned by server.banner, defaults to empty."
+    )
+    (
+        "sparrow.self_bind",
+        value<network::config::endpoints>(&configured.server.sparrow.self_binds),
+        "Advertised host:port at which this server can be reached (defaults to empty)."
+    )
+    (
+        "sparrow.self_safe",
+        value<network::config::endpoints>(&configured.server.sparrow.self_safes),
+        "Advertised secure host:port at which this server can be reached (defaults to empty)."
+    )
+    (
+        "sparrow.more_bind",
+        value<network::config::endpoints>(&configured.server.sparrow.more_binds),
+        "Advertised host:port at which another server can be reached (defaults to empty)."
+    )
+    (
+        "sparrow.more_safe",
+        value<network::config::endpoints>(&configured.server.sparrow.more_safes),
+        "Advertised secure host:port at which another server can be reached (defaults to empty)."
+    )
     /* [stratum_v1] */
     (
         "stratum_v1.bind",

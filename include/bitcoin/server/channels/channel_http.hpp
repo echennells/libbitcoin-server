@@ -25,35 +25,34 @@
 namespace libbitcoin {
 namespace server {
 
-/// Channel for http services, websocket frames read as Body (a json-rpc
-/// service instantiates with network::rpc::request). An in-band service
-/// (e.g. btcd authenticate) authorizes after upgrade, so its upgrade is open.
-template <typename Body = network::http::string_value, bool InBand = false>
+/// Common base for http service channels. A service channel overrides
+/// default_body to preselect its reader body, and a json-rpc body also
+/// implies tcp downgrade detection. An in-band service (e.g. btcd
+/// authenticate) authorizes after upgrade, so its upgrade is open.
 class BCS_API channel_http
   : public server::channel,
-    public network::channel_http,
-    protected network::tracker<channel_http<Body, InBand>>
+    public network::channel_http
 {
 public:
     typedef std::shared_ptr<channel_http> ptr;
 
     inline channel_http(const network::logger& log,
         const network::socket::ptr& socket, uint64_t identifier,
-        const node::configuration& config, const options_t& options) NOEXCEPT
+        const node::configuration& config, const options_t& options,
+        bool in_band=false) NOEXCEPT
       : server::channel(log, socket, identifier, config),
         network::channel_http(log, socket, identifier, config.network, options,
-            InBand),
-        network::tracker<channel_http<Body, InBand>>(log)
+            in_band)
     {
     }
 
 protected:
     using value_type = network::http::body::value_type;
 
-    /// Overridden to set the websocket reader body type.
-    inline value_type websocket_body() const NOEXCEPT override
+    /// There is no forwarding constructor so assign and move.
+    template <typename Body>
+    static inline value_type to_body() NOEXCEPT
     {
-        // There is no forwarding constructor so assign and move.
         value_type value{};
         value = Body{};
         return value;

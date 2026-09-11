@@ -20,6 +20,8 @@
 #define LIBBITCOIN_SERVER_TEST_PROTOCOLS_BTCD_BTCD_SETUP_FIXTURE
 
 #include "../../test.hpp"
+#include "../fixture/rpc_client.hpp"
+#include "../fixture/rpc_setup_fixture.hpp"
 #include "../../mocks/blocks.hpp"
 
 #define BTCD_ENDPOINT "127.0.0.1:65004"
@@ -28,6 +30,7 @@
 #define BTCD_TEST_SCOPED_METHOD "session"
 
 struct btcd_setup_fixture
+  : rpc_setup_fixture
 {
     using initializer = std::function<bool(test::query_t&)>;
     using configurator = std::function<void(configuration&)>;
@@ -55,6 +58,11 @@ struct btcd_setup_fixture
 
     // JSON-RPC 2.0 over plain HTTP POST to "/" (a separate connection from
     // the ws one rpc() uses).
+    // JSON-RPC 2.0 over raw tcp (no http), which downgrades the connection.
+    // Returns the parsed json-rpc response object, or {"dropped":true}.
+    boost::json::value tcp_rpc(std::string_view method,
+        std::string_view params="[]");
+
     boost::json::value http_rpc(std::string_view method,
         std::string_view params = "[]");
 
@@ -62,26 +70,10 @@ struct btcd_setup_fixture
     // notification. Returns the parsed json-rpc notification object.
     boost::json::value receive_notification();
 
-    // Synthesize a node chase event (e.g. a block organized/confirmed after
-    // a direct query_.set/push_confirmed) without a live p2p sync -- mirrors
-    // electrum_setup_fixture::notify.
-    void notify(node::chase event_, node::event_value value=0_u32);
-
-protected:
-    configuration config_;
-    test::store_t store_;
-    test::query_t query_;
-
 private:
-    using tcp_stream = boost::beast::tcp_stream;
-    using websocket_stream = boost::beast::websocket::stream<tcp_stream&>;
-
-    network::logger log_;
-    server::server_node server_;
-    boost::asio::io_context io_{};
-    tcp_stream socket_{ io_.get_executor() };
-    websocket_stream websocket_{ socket_ };
-    tcp_stream http_socket_{ io_.get_executor() };
+    // The ws connection, plus the plain one used by http_rpc or tcp_rpc.
+    rpc_client client_{ io_ };
+    rpc_client other_{ io_ };
     int http_request_id_{};
     int request_id_{};
 };

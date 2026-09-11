@@ -18,6 +18,7 @@
  */
 #include <bitcoin/server/protocols/protocol_electrum.hpp>
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <bitcoin/server/define.hpp>
@@ -32,6 +33,9 @@ using namespace network::rpc;
 using namespace std::placeholders;
 
 BC_PUSH_WARNING(NO_THROW_IN_NOEXCEPT)
+
+// The protocol requires a pong length limit but does not specify one.
+constexpr size_t maximum_pong = 1024;
 
 void protocol_electrum::handle_server_add_peer(const code& ec,
     rpc_interface::server_add_peer, const interface::object_t&) NOEXCEPT
@@ -138,7 +142,16 @@ void protocol_electrum::handle_server_features(const code& ec,
         value["hash_function"] = string_t{ "sha256" };
     }
 
+    // Derived services decorate the response (e.g. sparrow adds
+    // silent_payments), as it is the advertisement of what they serve.
+    add_features(value);
+
     send_result(std::move(value), 1024);
+}
+
+// Base is not a derived service, so it adds nothing.
+void protocol_electrum::add_features(object_t&) const NOEXCEPT
+{
 }
 
 // This is not actually a subscription method.
@@ -158,7 +171,39 @@ void protocol_electrum::handle_server_peers_subscribe(const code& ec,
     send_result(more_hosts(), 1024);
 }
 
-// Server does not send ping notifications (or perform other traffic shaping).
+// An unrequested ping is a notification, which http cannot carry.
+void protocol_electrum::start_ping() NOEXCEPT
+{
+    BC_ASSERT(stranded());
+
+    const auto span = options().ping_interval_seconds;
+    if (stopped() || is_zero(span) || !at_least(electrum::version::v1_7) ||
+        !(websocket() || downgraded()))
+        return;
+
+    ping_timer_->start(BIND(handle_ping, _1), network::seconds(span));
+}
+
+void protocol_electrum::handle_ping(const code& ec) NOEXCEPT
+{
+    BC_ASSERT(stranded());
+
+    if (stopped() || ec == network::error::operation_canceled)
+        return;
+
+    if (ec)
+    {
+        stop(ec);
+        return;
+    }
+
+    const auto size = options().ping_size;
+    send_notification("server.ping", array_t{ string_t(size, '0') },
+        add1(size));
+
+    start_ping();
+}
+
 void protocol_electrum::handle_server_ping(const code& ec,
     rpc_interface::server_ping, double pong_len,
     const std::string& data) NOEXCEPT
@@ -172,37 +217,26 @@ void protocol_electrum::handle_server_ping(const code& ec,
         return;
     }
 
-    // Default response of null_t.
-    value_t value{};
-    size_t size{ 42 };
-
+    // Arguments are accepted and ignored below 1.7, which has no response.
     if (!at_least(electrum::version::v1_7))
     {
-        if (!data.empty() || is_nonzero(pong_len))
-        {
-            send_code(error::electrum::bad_request);
-            return;
-        }
+        send_result(value_t{}, 42);
+        return;
     }
-    else
+
+    size_t length{};
+    if (!std::ranges::all_of(data, is_base16<char>) ||
+        !to_integer(length, pong_len))
     {
-        data_chunk unused{};
-
-        // Base16 encoding validation expects whole octets (even char count).
-        if (!to_integer(size, pong_len) || (size != data.length()) ||
-            !decode_base16(unused, data))
-        {
-            send_code(error::electrum::bad_request);
-            return;
-        }
-
-        // Treat empty as default (args look the same, may not be correct).
-        if (is_nonzero(size))
-            value = string_t(size, '0');
+        send_code(error::electrum::bad_request);
+        return;
     }
 
-    // Length is limited by maximum_request (DoS protection).
-    send_result(std::move(value), size);
+    length = std::min(length, maximum_pong);
+
+    object_t out{};
+    out["data"] = string_t(length, '0');
+    send_result(std::move(out), length + 42);
 }
 
 // utilities
