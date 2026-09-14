@@ -39,6 +39,7 @@ public:
     code initialize() NOEXCEPT override;
 
     /// Environment.
+    system::chain::selection context{};
     system::config::path file{};
 
     /// Information.

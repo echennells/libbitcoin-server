@@ -7,6 +7,12 @@ You can do this by passing a config file to the server at start with the followi
 ```sh
 $ ./bs --config ./bs.cfg
 ```
+
+The chain is selected on the command line (or by the `BS_NETWORK` environment variable) and seeds the default of every network-dependent setting, so a configuration file only needs to carry what differs from those defaults:
+
+```sh
+$ ./bs --network testnet3 --config ./bs.cfg
+```
 ## Config File Structure
 The libbitcoin configuration file, referred to below as `bs.cfg`, follows the following structural format:
 
