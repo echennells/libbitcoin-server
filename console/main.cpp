@@ -108,11 +108,18 @@ int bc::system::main(int argc, char* argv[])
     std::ios_base::sync_with_stdio(false);
     set_utf8_stdio();
 
+    const auto& args = const_cast<const char**>(argv);
+
+    // The selection seeds all defaults, so it is obtained before parse.
+    const auto context = server::parser::context(argc, args, cerr);
+    if (context == chain::selection::none)
+    {
+        return EXIT_FAILURE;
+    }
+
     const admin_pages admin{};
     const native_pages native{};
-    server::parser metadata(chain::selection::mainnet, native, admin);
-
-    const auto& args = const_cast<const char**>(argv);
+    server::parser metadata(context, native, admin);
     if (!metadata.parse(argc, args, cerr))
     {
         return EXIT_FAILURE;
