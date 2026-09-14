@@ -29,6 +29,7 @@ configuration::configuration(system::chain::selection context,
     const server::settings::embedded_pages& native,
     const server::settings::embedded_pages& admin) NOEXCEPT
   : node::configuration(context),
+    context(context),
     log(context),
     server(context, native, admin)
 {

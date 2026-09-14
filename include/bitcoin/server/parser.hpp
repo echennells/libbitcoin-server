@@ -53,6 +53,12 @@ public:
     static constexpr auto get_variable = "get";
     static constexpr auto put_variable = "put";
     static constexpr auto config_variable = "config";
+    static constexpr auto network_variable = "network";
+
+    /// The chain selection given by the command line and environment,
+    /// selection::none on failure (the error is written to the stream).
+    static system::chain::selection context(int argc, const char* argv[],
+        std::ostream& error) THROWS;
 
     parser(system::chain::selection context,
         const server::settings::embedded_pages& native,

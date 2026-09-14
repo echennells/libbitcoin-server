@@ -36,6 +36,7 @@ public:
         const server::settings::embedded_pages& admin) NOEXCEPT;
 
     /// Environment.
+    system::chain::selection context{};
     std::filesystem::path file{};
 
     /// Information.

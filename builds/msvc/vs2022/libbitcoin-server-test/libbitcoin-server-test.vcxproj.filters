@@ -75,6 +75,9 @@
     <ClCompile Include="..\..\..\..\test\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\..\test\parser.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\..\test\mocks\blocks.cpp">
       <Filter>src\mocks</Filter>
     </ClCompile>
