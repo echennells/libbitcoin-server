@@ -36,6 +36,18 @@ using namespace bc::system::config;
 namespace table = bc::database::table;
 using namespace boost::program_options;
 
+// The selection is a command line option (not a setting) because it seeds
+// the defaults of all settings, so it must precede configuration construction.
+static system::chain::selection to_selection(const std::string& name) THROWS
+{
+    using namespace system::chain;
+    if (name == "mainnet") return selection::mainnet;
+    if (name == "testnet3") return selection::testnet3;
+    if (name == "testnet4") return selection::testnet4;
+    if (name == "regtest") return selection::regtest;
+    throw invalid_option_value(name);
+}
+
 // Initialize configuration using defaults of the given context.
 parser::parser(system::chain::selection context,
     const server::settings::embedded_pages& native,
@@ -60,16 +72,45 @@ parser::parser(system::chain::selection context,
     configured.network.protocol_maximum = level::maximum_protocol;
 
     // TODO: from bitcoind, revert to defaults when seeds are up.
-    configured.network.outbound.seeds.clear();
-    configured.network.outbound.seeds.emplace_back("seed.bitcoin.sipa.be", 8333_u16);
-    configured.network.outbound.seeds.emplace_back("dnsseed.bluematt.me", 8333_u16);
-    ////configured.network.outbound.seeds.emplace_back("dnsseed.bitcoin.dashjr-list-of-p2p-nodes.us", 8333_u16);
-    configured.network.outbound.seeds.emplace_back("seed.bitcoin.jonasschnelli.ch", 8333_u16);
-    configured.network.outbound.seeds.emplace_back("seed.btc.petertodd.net", 8333_u16);
-    configured.network.outbound.seeds.emplace_back("seed.bitcoin.sprovoost.nl", 8333_u16);
-    configured.network.outbound.seeds.emplace_back("dnsseed.emzy.de", 8333_u16);
-    configured.network.outbound.seeds.emplace_back("seed.bitcoin.wiz.biz", 8333_u16);
-    configured.network.outbound.seeds.emplace_back("seed.mainnet.achownodes.xyz", 8333_u16);
+    auto& seeds = configured.network.outbound.seeds;
+    seeds.clear();
+    switch (context)
+    {
+        case system::chain::selection::testnet3:
+        {
+            seeds.emplace_back("testnet-seed.bitcoin.jonasschnelli.ch", 18333_u16);
+            seeds.emplace_back("seed.tbtc.petertodd.net", 18333_u16);
+            seeds.emplace_back("seed.testnet.bitcoin.sprovoost.nl", 18333_u16);
+            seeds.emplace_back("testnet-seed.bluematt.me", 18333_u16);
+            break;
+        }
+        case system::chain::selection::testnet4:
+        {
+            seeds.emplace_back("seed.testnet4.bitcoin.sprovoost.nl", 48333_u16);
+            seeds.emplace_back("seed.testnet4.wiz.biz", 48333_u16);
+            break;
+        }
+        case system::chain::selection::regtest:
+        {
+            // Regtest is private network only, so there is no seeding.
+            configured.network.outbound.connections = 0;
+            break;
+        }
+        case system::chain::selection::mainnet:
+        default:
+        {
+            seeds.emplace_back("seed.bitcoin.sipa.be", 8333_u16);
+            seeds.emplace_back("dnsseed.bluematt.me", 8333_u16);
+            ////seeds.emplace_back("dnsseed.bitcoin.dashjr-list-of-p2p-nodes.us", 8333_u16);
+            seeds.emplace_back("seed.bitcoin.jonasschnelli.ch", 8333_u16);
+            seeds.emplace_back("seed.btc.petertodd.net", 8333_u16);
+            seeds.emplace_back("seed.bitcoin.sprovoost.nl", 8333_u16);
+            seeds.emplace_back("dnsseed.emzy.de", 8333_u16);
+            seeds.emplace_back("seed.bitcoin.wiz.biz", 8333_u16);
+            seeds.emplace_back("seed.mainnet.achownodes.xyz", 8333_u16);
+            break;
+        }
+    }
 
     // server
 
@@ -228,6 +269,13 @@ options_metadata parser::load_options() THROWS
     options_metadata description("options");
     description.add_options()
     (
+        network_variable,
+        value<std::string>()->default_value("mainnet")->
+            notifier([&](const std::string& value)
+                { configured.context = to_selection(value); }),
+        "Chain to run: 'mainnet', 'testnet3', 'testnet4' or 'regtest'."
+    )
+    (
         alias(config_variable, 'c').c_str(),
         value<config::path>(&configured.file),
         "Specify path to a configuration settings file."
@@ -357,6 +405,13 @@ options_metadata parser::load_environment() THROWS
         value<config::path>(&configured.file)->composing()
             /*->default_value(config_default_path())*/,
         "The path to the configuration settings file."
+    )
+    (
+        network_variable,
+        value<std::string>()->composing()->
+            notifier([&](const std::string& value)
+                { configured.context = to_selection(value); }),
+        "Chain to run: 'mainnet', 'testnet3', 'testnet4' or 'regtest'."
     );
 
     return description;
@@ -1016,7 +1071,7 @@ options_metadata parser::load_settings() THROWS
     (
         "wallet.hd_public_prefix",
         setting<uint32_t>(&configured.server.wallet.hd_public_prefix),
-        "The extended public key prefix, defaults to '76067358' (use '71979618' for testnet)."
+        "The extended public key prefix, defaults to '76067358' (use '70617039' for testnet)."
     )
 
     /* [admin] */
@@ -2598,6 +2653,18 @@ options_metadata parser::load_settings() THROWS
     );
 
     return description;
+}
+
+BC_PUSH_WARNING(NO_ARRAY_TO_POINTER_DECAY)
+system::chain::selection parser::context(int argc, const char* argv[],
+    std::ostream& error) THROWS
+BC_POP_WARNING()
+{
+    // Parse under mainnet solely to obtain the selection.
+    const server::settings::embedded_pages pages{};
+    parser metadata(system::chain::selection::mainnet, pages, pages);
+    return metadata.parse(argc, argv, error) ? metadata.configured.context :
+        system::chain::selection::none;
 }
 
 BC_PUSH_WARNING(NO_ARRAY_TO_POINTER_DECAY)
