@@ -42,6 +42,25 @@ BC_PUSH_WARNING(NO_THROW_IN_NOEXCEPT)
 BC_PUSH_WARNING(SMART_PTR_NOT_NEEDED)
 BC_PUSH_WARNING(NO_VALUE_OR_CONST_REF_SHARED_PTR)
 
+constexpr uint64_t vbytes_per_vkbyte = 1'000;
+
+// Satoshis per virtual kilobyte, as computed by the tx pool.
+static uint64_t to_rate(const chain::transaction& tx) NOEXCEPT
+{
+    const auto size = tx.virtual_size();
+    if (is_zero(size))
+        return zero;
+
+    return floored_divide(ceilinged_multiply(tx.fee(), vbytes_per_vkbyte),
+        possible_wide_cast<uint64_t>(size));
+}
+
+// Amounts are bitcoins and fee rates are bitcoins per virtual kilobyte.
+static bool to_satoshis(uint64_t& out, double bitcoins) NOEXCEPT
+{
+    return to_integer(out, bitcoins * chain::satoshi_per_bitcoin, true);
+}
+
 // Start.
 // ----------------------------------------------------------------------------
 
@@ -196,10 +215,19 @@ bool protocol_bitcoind_transaction::handle_get_raw_transaction(const code& ec,
 
 bool protocol_bitcoind_transaction::handle_send_raw_transaction(const code& ec,
     rpc_interface::send_raw_transaction, const std::string& hexstring,
-    double, double) NOEXCEPT
+    double maxfeerate, double maxburnamount) NOEXCEPT
 {
     if (stopped(ec))
         return false;
+
+    uint64_t maximum_rate{};
+    uint64_t maximum_burn{};
+    if (!to_satoshis(maximum_rate, maxfeerate) ||
+        !to_satoshis(maximum_burn, maxburnamount))
+    {
+        send_error(error::bitcoind::type_error);
+        return true;
+    }
 
     data_chunk data{};
     if (!decode_base16(data, hexstring))
@@ -212,6 +240,19 @@ bool protocol_bitcoind_transaction::handle_send_raw_transaction(const code& ec,
     if (!tx->is_valid())
     {
         send_error(error::bitcoind::deserialization_error);
+        return true;
+    }
+
+    // Value sent to an unspendable output script is burned.
+    const auto burns = [maximum_burn](const auto& out) NOEXCEPT
+    {
+        return out->script().is_unspendable() && out->value() > maximum_burn;
+    };
+
+    const auto& outputs = *tx->outputs_ptr();
+    if (std::any_of(outputs.begin(), outputs.end(), burns))
+    {
+        send_error(error::bitcoind::verify_error);
         return true;
     }
 
@@ -234,10 +275,50 @@ bool protocol_bitcoind_transaction::handle_send_raw_transaction(const code& ec,
     }
 
     // A single tx is the minimal package.
-    constexpr auto test = false;
-    submit(to_shared(chain::transaction_cptrs{ tx }),
-        test, BIND(handle_submit_tx, _1, _2, tx));
+    const auto package = to_shared(chain::transaction_cptrs{ tx });
+
+    // A zero rate is unlimited, otherwise the fee is known once validated.
+    if (is_zero(maximum_rate))
+    {
+        constexpr auto test = false;
+        submit(package, test, BIND(handle_submit_tx, _1, _2, tx));
+        return true;
+    }
+
+    constexpr auto test = true;
+    submit(package, test, BIND(handle_test_tx, _1, _2, tx, maximum_rate));
     return true;
+}
+
+void protocol_bitcoind_transaction::handle_test_tx(const code& ec, size_t,
+    const chain::transaction::cptr& tx, uint64_t maximum_rate) NOEXCEPT
+{
+    POST(complete_test_tx, ec, tx, maximum_rate);
+}
+
+void protocol_bitcoind_transaction::complete_test_tx(const code& ec,
+    const chain::transaction::cptr& tx, uint64_t maximum_rate) NOEXCEPT
+{
+    BC_ASSERT(stranded());
+
+    if (stopped())
+        return;
+
+    if (ec)
+    {
+        complete_submit_tx(ec, tx);
+        return;
+    }
+
+    if (to_rate(*tx) > maximum_rate)
+    {
+        send_error(error::bitcoind::verify_error);
+        return;
+    }
+
+    constexpr auto test = false;
+    submit(to_shared(chain::transaction_cptrs{ tx }), test,
+        BIND(handle_submit_tx, _1, _2, tx));
 }
 
 void protocol_bitcoind_transaction::handle_submit_tx(const code& ec, size_t,
@@ -272,10 +353,17 @@ void protocol_bitcoind_transaction::complete_submit_tx(const code& ec,
 
 bool protocol_bitcoind_transaction::handle_test_mempool_accept(const code& ec,
     rpc_interface::test_mempool_accept, const array_t& rawtxs,
-    double) NOEXCEPT
+    double maxfeerate) NOEXCEPT
 {
     if (stopped(ec))
         return false;
+
+    uint64_t maximum_rate{};
+    if (!to_satoshis(maximum_rate, maxfeerate))
+    {
+        send_error(error::bitcoind::type_error);
+        return true;
+    }
 
     if (rawtxs.empty())
     {
@@ -306,19 +394,20 @@ bool protocol_bitcoind_transaction::handle_test_mempool_accept(const code& ec,
 
     constexpr auto test = true;
     const auto package = to_shared<chain::transaction_cptrs>(std::move(txs));
-    submit(package, test, BIND(handle_test_package, _1, _2, package));
+    submit(package, test,
+        BIND(handle_test_package, _1, _2, package, maximum_rate));
     return true;
 }
 
 void protocol_bitcoind_transaction::handle_test_package(const code& ec, size_t,
-    const chain::transactions_cptr& txs) NOEXCEPT
+    const chain::transactions_cptr& txs, uint64_t maximum_rate) NOEXCEPT
 {
-    POST(complete_test_package, ec, txs);
+    POST(complete_test_package, ec, txs, maximum_rate);
 }
 
 // The package is accepted as a whole, so its code applies to each of its txs.
 void protocol_bitcoind_transaction::complete_test_package(const code& ec,
-    const chain::transactions_cptr& txs) NOEXCEPT
+    const chain::transactions_cptr& txs, uint64_t maximum_rate) NOEXCEPT
 {
     BC_ASSERT(stranded());
 
@@ -330,15 +419,21 @@ void protocol_bitcoind_transaction::complete_test_package(const code& ec,
 
     for (const auto& tx: *txs)
     {
+        // A zero rate is unlimited.
+        const auto exceeds = !ec && !is_zero(maximum_rate) &&
+            (to_rate(*tx) > maximum_rate);
+
         object_t result
         {
             { "txid", encode_hash(tx->hash(false)) },
             { "wtxid", encode_hash(tx->hash(true)) },
-            { "allowed", !ec }
+            { "allowed", !ec && !exceeds }
         };
 
         if (ec)
             result.emplace("reject-reason", error::bitcoind::reject(ec));
+        else if (exceeds)
+            result.emplace("reject-reason", std::string{ "max-fee-exceeded" });
 
         results.emplace_back(std::move(result));
     }
