@@ -99,9 +99,18 @@ protected:
         const network::rpc::array_t& descriptors) NOEXCEPT;
 
     void handle_test_package(const code& ec, size_t index,
-        const system::chain::transactions_cptr& txs) NOEXCEPT;
+        const system::chain::transactions_cptr& txs,
+        uint64_t maximum_rate) NOEXCEPT;
     void complete_test_package(const code& ec,
-        const system::chain::transactions_cptr& txs) NOEXCEPT;
+        const system::chain::transactions_cptr& txs,
+        uint64_t maximum_rate) NOEXCEPT;
+
+    void handle_test_tx(const code& ec, size_t index,
+        const system::chain::transaction::cptr& tx,
+        uint64_t maximum_rate) NOEXCEPT;
+    void complete_test_tx(const code& ec,
+        const system::chain::transaction::cptr& tx,
+        uint64_t maximum_rate) NOEXCEPT;
 
     void handle_submit_tx(const code& ec, size_t link,
         const system::chain::transaction::cptr& tx) NOEXCEPT;

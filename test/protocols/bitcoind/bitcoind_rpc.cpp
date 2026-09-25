@@ -427,6 +427,24 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__malformed__error)
     BOOST_REQUIRE(has_error(response));
 }
 
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__negative_maxfeerate__type_error)
+{
+    const auto response = rpc("sendrawtransaction", "[\"00\", -1]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -3), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__fractional_satoshi_maxburnamount__type_error)
+{
+    const auto response = rpc("sendrawtransaction", "[\"00\", 0.1, 0.000000001]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -3), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__negative_maxfeerate__type_error)
+{
+    const auto response = rpc("testmempoolaccept", "[[\"00\"], -1]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -3), response);
+}
+
 BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__confirmed_unspent__verify_already_in_utxo_set)
 {
     const auto tx0 = encode_base16(test::genesis.transactions_ptr()->front()->to_data(true));
@@ -2405,6 +2423,27 @@ BOOST_AUTO_TEST_SUITE_END()
 // The tx chaser refuses submission and testing while the pool is closed.
 
 BOOST_FIXTURE_TEST_SUITE(bitcoind_closed_tests, bitcoind_closed_setup_fixture)
+
+// The burn is rejected before submission, so the closed pool is not reached.
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__burned_value__verify_error)
+{
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ chain::script::to_pay_null_data_pattern({ 0x42 }) } };
+    const chain::transaction burn{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(burn.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\"]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -25), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__burned_value_within_maxburnamount__verify_rejected)
+{
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ chain::script::to_pay_null_data_pattern({ 0x42 }) } };
+    const chain::transaction burn{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(burn.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\", 0.1, 0.00000001]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -26), response);
+}
 
 BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__closed_pool__verify_rejected)
 {
