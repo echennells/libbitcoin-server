@@ -54,6 +54,20 @@ void executor::dump_version(bool stored) const
         logger(std::format("database schema...... {}", query_.envelope().schema.to_string()));
 }
 
+// The store is not opened, only its envelope is read.
+void executor::dump_schema()
+{
+    const auto& store = metadata_.configured.database.path;
+    if (!database::file::is_directory(store))
+        return;
+
+    system::config::version schema{};
+    if (const auto ec = store_.read_schema(schema))
+        logger(std::format(BS_DATABASE_SCHEMA_FAIL, ec.message()));
+    else
+        logger(std::format("database schema...... {}", schema.to_string()));
+}
+
 // The "try" functions are safe for instructions not compiled in.
 void executor::dump_hardware() const
 {
@@ -74,8 +88,8 @@ void executor::dump_hardware() const
     logger(std::format("sha512...... " BS_HARDWARE_COMPILED, try_sha512(), have_sha512));
     logger(std::format("sse41....... " BS_HARDWARE_COMPILED, try_sse41(), have_sse41));
     logger(std::format("avx2........ " BS_HARDWARE_COMPILED, try_avx2(), have_avx2));
-    logger(std::format("avxifma..... " BS_HARDWARE_COMPILED, try_avxifma(), have_avxifma));
     logger(std::format("avx512...... " BS_HARDWARE_COMPILED, try_avx512(), have_avx512));
+    logger(std::format("avxifma..... " BS_HARDWARE_COMPILED, try_avxifma(), have_avxifma));
     logger(std::format("avx512ifma.. " BS_HARDWARE_COMPILED, try_avx512ifma(), have_avx512ifma));
 #endif
 

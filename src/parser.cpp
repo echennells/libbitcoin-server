@@ -1018,6 +1018,11 @@ options_metadata parser::load_settings() THROWS
         "The witness address prefix, defaults to {} (use 'tb' for testnet)."
     )
     (
+        "wallet.silent_prefix",
+        setting<std::string>(&configured.server.wallet.silent_prefix),
+        "The silent payment address prefix, defaults to {} (use 'tsp' for testnet)."
+    )
+    (
         "wallet.hd_private_prefix",
         setting<uint32_t>(&configured.server.wallet.hd_private_prefix),
         "The extended private key prefix, defaults to {} (use '70615956' for testnet)."
@@ -2136,6 +2141,11 @@ options_metadata parser::load_settings() THROWS
         "node.compact_timeout_seconds",
         setting<uint16_t>(&configured.node.compact_timeout_seconds),
         "Time to await a compact block fill before downloading the block, defaults to {} (0 disables)."
+    )
+    (
+        "node.compact_missing_percent",
+        setting<uint16_t>(&configured.node.compact_missing_percent),
+        "Maximum percent of a compact block not pooled to fill it, defaults to {}."
     )
     (
         "node.currency_window_minutes",
