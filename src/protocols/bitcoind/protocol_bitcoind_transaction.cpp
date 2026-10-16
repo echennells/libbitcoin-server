@@ -194,12 +194,55 @@ bool protocol_bitcoind_transaction::handle_get_raw_transaction(const code& ec,
     return true;
 }
 
+// bitcoind amounts are whole satoshis within its money range.
+static bool to_satoshis(uint64_t& out, double bitcoins) NOEXCEPT
+{
+    constexpr auto maximum_bitcoins = 21'000'000.0;
+    return (bitcoins >= 0.0) && (bitcoins <= maximum_bitcoins) &&
+        to_integer(out, bitcoins * chain::satoshi_per_bitcoin, true);
+}
+
+// bitcoind caps the fee at its rate per virtual kilobyte, rounded up.
+static bool is_excessive(const chain::transaction& tx,
+    uint64_t maximum_rate) NOEXCEPT
+{
+    constexpr uint64_t vbytes_per_vkbyte = 1'000;
+    const auto vsize = possible_wide_cast<uint64_t>(tx.virtual_size());
+    return tx.fee() > ceilinged_divide(ceilinged_multiply(maximum_rate, vsize),
+        vbytes_per_vkbyte);
+}
+
+// bitcoind burns the value of an output script that starts with op_return,
+// is oversized, or has an unparsed, oversized or undefined operation.
+static bool is_burned(const chain::output& output) NOEXCEPT
+{
+    const auto& script = output.script();
+    const auto& ops = script.ops();
+    const auto invalid = [](const chain::operation& op) NOEXCEPT
+    {
+        return op.is_underflow() || op.is_oversized() ||
+            (op.code() > chain::opcode::nop10);
+    };
+
+    return script.is_oversized() ||
+        (!ops.empty() && (ops.front().code() == chain::opcode::op_return)) ||
+        std::any_of(ops.begin(), ops.end(), invalid);
+}
+
 bool protocol_bitcoind_transaction::handle_send_raw_transaction(const code& ec,
     rpc_interface::send_raw_transaction, const std::string& hexstring,
-    double, double) NOEXCEPT
+    double maxfeerate, double maxburnamount) NOEXCEPT
 {
     if (stopped(ec))
         return false;
+
+    // bitcoind parses the burn limit, the tx, then the fee rate limit.
+    uint64_t maximum_burn{};
+    if (!to_satoshis(maximum_burn, maxburnamount))
+    {
+        send_error(error::bitcoind::type_error);
+        return true;
+    }
 
     data_chunk data{};
     if (!decode_base16(data, hexstring))
@@ -212,6 +255,31 @@ bool protocol_bitcoind_transaction::handle_send_raw_transaction(const code& ec,
     if (!tx->is_valid())
     {
         send_error(error::bitcoind::deserialization_error);
+        return true;
+    }
+
+    const auto burned = [maximum_burn](const auto& output) NOEXCEPT
+    {
+        return (output->value() > maximum_burn) && is_burned(*output);
+    };
+
+    const auto& outputs = *tx->outputs_ptr();
+    if (std::any_of(outputs.begin(), outputs.end(), burned))
+    {
+        send_error(error::bitcoind::verify_error);
+        return true;
+    }
+
+    uint64_t maximum_rate{};
+    if (!to_satoshis(maximum_rate, maxfeerate))
+    {
+        send_error(error::bitcoind::type_error);
+        return true;
+    }
+
+    if (maximum_rate >= chain::satoshi_per_bitcoin)
+    {
+        send_error(error::bitcoind::invalid_parameter);
         return true;
     }
 
@@ -229,6 +297,27 @@ bool protocol_bitcoind_transaction::handle_send_raw_transaction(const code& ec,
         if (std::any_of(outs.begin(), outs.end(), unspent))
         {
             send_error(error::bitcoind::verify_already_in_utxo_set);
+            return true;
+        }
+    }
+
+    // A zero rate is unlimited, a stored tx is not capped, and null points
+    // (including coinbase) are left to validation. The fee is read from a copy,
+    // so that the submitted tx is populated only by its validation.
+    const auto null = [](const auto& in) NOEXCEPT
+    {
+        return in->point().is_null();
+    };
+
+    const auto& ins = *tx->inputs_ptr();
+    if (!is_zero(maximum_rate) && link.is_terminal() &&
+        std::none_of(ins.begin(), ins.end(), null))
+    {
+        const chain::transaction copy{ data, true };
+        if (query.populate_without_metadata(copy) &&
+            is_excessive(copy, maximum_rate))
+        {
+            send_error(error::bitcoind::verify_error);
             return true;
         }
     }
@@ -287,12 +376,25 @@ void protocol_bitcoind_transaction::complete_submit_tx(const code& ec,
 
 bool protocol_bitcoind_transaction::handle_test_mempool_accept(const code& ec,
     rpc_interface::test_mempool_accept, const array_t& rawtxs,
-    double) NOEXCEPT
+    double maxfeerate) NOEXCEPT
 {
     if (stopped(ec))
         return false;
 
     if (rawtxs.empty())
+    {
+        send_error(error::bitcoind::invalid_parameter);
+        return true;
+    }
+
+    uint64_t maximum_rate{};
+    if (!to_satoshis(maximum_rate, maxfeerate))
+    {
+        send_error(error::bitcoind::type_error);
+        return true;
+    }
+
+    if (maximum_rate >= chain::satoshi_per_bitcoin)
     {
         send_error(error::bitcoind::invalid_parameter);
         return true;
@@ -321,39 +423,55 @@ bool protocol_bitcoind_transaction::handle_test_mempool_accept(const code& ec,
 
     constexpr auto test = true;
     const auto package = to_shared<chain::transaction_cptrs>(std::move(txs));
-    submit(package, test, BIND(handle_test_package, _1, _2, package));
+    submit(package, test,
+        BIND(handle_test_package, _1, _2, package, maximum_rate));
     return true;
 }
 
 void protocol_bitcoind_transaction::handle_test_package(const code& ec, size_t,
-    const chain::transactions_cptr& txs) NOEXCEPT
+    const chain::transactions_cptr& txs, uint64_t maximum_rate) NOEXCEPT
 {
-    POST(complete_test_package, ec, txs);
+    POST(complete_test_package, ec, txs, maximum_rate);
 }
 
 // The package is accepted as a whole, so its code applies to each of its txs.
+// As with bitcoind, txs after one that exceeds the fee rate limit are not
+// reported as allowed or rejected.
 void protocol_bitcoind_transaction::complete_test_package(const code& ec,
-    const chain::transactions_cptr& txs) NOEXCEPT
+    const chain::transactions_cptr& txs, uint64_t maximum_rate) NOEXCEPT
 {
     BC_ASSERT(stranded());
 
     if (stopped())
         return;
 
+    const auto& query = archive();
     array_t results{};
     results.reserve(txs->size());
+    auto exceeded = false;
 
     for (const auto& tx: *txs)
     {
         object_t result
         {
             { "txid", encode_hash(tx->hash(false)) },
-            { "wtxid", encode_hash(tx->hash(true)) },
-            { "allowed", !ec }
+            { "wtxid", encode_hash(tx->hash(true)) }
         };
 
-        if (ec)
-            result.emplace("reject-reason", error::bitcoind::reject(ec));
+        if (!exceeded)
+        {
+            // A zero rate is unlimited, and a stored tx is populated here.
+            exceeded = !ec && !is_zero(maximum_rate) && !tx->is_coinbase() &&
+                query.populate_without_metadata(*tx) &&
+                is_excessive(*tx, maximum_rate);
+
+            result.emplace("allowed", !ec && !exceeded);
+            if (ec)
+                result.emplace("reject-reason", error::bitcoind::reject(ec));
+            else if (exceeded)
+                result.emplace("reject-reason",
+                    std::string{ "max-fee-exceeded" });
+        }
 
         results.emplace_back(std::move(result));
     }
