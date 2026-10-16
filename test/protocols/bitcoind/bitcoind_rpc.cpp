@@ -554,6 +554,19 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__not_transaction__deseriali
     BOOST_REQUIRE(has_code(rpc("testmempoolaccept", "[[\"0000\"]]"), -22));
 }
 
+// The fee rate limit is parsed before the txs (bitcoind order).
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__negative_maxfeerate__type_error)
+{
+    const auto response = rpc("testmempoolaccept", "[[\"00\"], -1]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -3), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__whole_bitcoin_maxfeerate__invalid_parameter)
+{
+    const auto response = rpc("testmempoolaccept", "[[\"00\"], 1]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -8), response);
+}
+
 BOOST_AUTO_TEST_CASE(bitcoind_rpc__combinerawtransaction__not_transaction__deserialization_error)
 {
     BOOST_REQUIRE(has_code(rpc("combinerawtransaction", "[[\"0000\"]]"), -22));
@@ -569,6 +582,51 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__malformed__error)
 {
     const auto response = rpc("sendrawtransaction", "[\"00\"]");
     BOOST_REQUIRE(has_error(response));
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__negative_maxburnamount__type_error)
+{
+    const auto response = rpc("sendrawtransaction", "[\"00\", 0.1, -1]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -3), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__fractional_satoshi_maxburnamount__type_error)
+{
+    const auto response = rpc("sendrawtransaction", "[\"00\", 0.1, 0.000000001]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -3), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__excess_maxburnamount__type_error)
+{
+    const auto response = rpc("sendrawtransaction", "[\"00\", 0.1, 21000001]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -3), response);
+}
+
+// The fee rate limit is parsed after the tx (bitcoind order).
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__malformed_negative_maxfeerate__deserialization_error)
+{
+    const auto response = rpc("sendrawtransaction", "[\"00\", -1]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -22), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__negative_maxfeerate__type_error)
+{
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ data_chunk{ 0x51 }, false } };
+    const chain::transaction tx{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(tx.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\", -1]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -3), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__whole_bitcoin_maxfeerate__invalid_parameter)
+{
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ data_chunk{ 0x51 }, false } };
+    const chain::transaction tx{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(tx.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\", 1]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -8), response);
 }
 
 BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__confirmed_unspent__verify_already_in_utxo_set)
@@ -3912,6 +3970,78 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__spendable__txid)
     BOOST_REQUIRE_EQUAL(as_text(response.at("result")), encode_hash(test::tx1c.hash(false)));
 }
 
+// tx1c pays 10 satoshis for 62 vbytes, so it is capped at 146 satoshis per
+// kvbyte: ceil(146 * 62 / 1000) = 10, and ceil(145 * 62 / 1000) = 9.
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__fee_above_maxfeerate__verify_error)
+{
+    BOOST_REQUIRE_EQUAL(test::tx1c.virtual_size(), 62u);
+    const auto response = rpc("sendrawtransaction", "[\"" + encode_base16(test::tx1c.to_data(true)) + "\", 0.00000145]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -25), response);
+
+    const auto pooled = rpc("getrawmempool", "[]");
+    BOOST_REQUIRE(pooled.at("result").as_array().empty());
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__fee_at_maxfeerate__txid)
+{
+    BOOST_REQUIRE_EQUAL(test::tx1c.virtual_size(), 62u);
+    const auto response = rpc("sendrawtransaction", "[\"" + encode_base16(test::tx1c.to_data(true)) + "\", 0.00000146]");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    BOOST_REQUIRE_EQUAL(as_text(response.at("result")), encode_hash(test::tx1c.hash(false)));
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__zero_maxfeerate__txid)
+{
+    const auto response = rpc("sendrawtransaction", "[\"" + encode_base16(test::tx1c.to_data(true)) + "\", 0]");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    BOOST_REQUIRE_EQUAL(as_text(response.at("result")), encode_hash(test::tx1c.hash(false)));
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__maximum_maxburnamount__txid)
+{
+    const auto response = rpc("sendrawtransaction", "[\"" + encode_base16(test::tx1c.to_data(true)) + "\", 0.1, 21000000]");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    BOOST_REQUIRE_EQUAL(as_text(response.at("result")), encode_hash(test::tx1c.hash(false)));
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__stored_fee_above_maxfeerate__txid)
+{
+    const auto hex = encode_base16(test::tx1c.to_data(true));
+    const auto sent = rpc("sendrawtransaction", "[\"" + hex + "\"]");
+    BOOST_REQUIRE_MESSAGE(sent.is_object() && sent.as_object().contains("result"), serialize(sent));
+
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\", 0.00000145]");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    BOOST_REQUIRE_EQUAL(as_text(response.at("result")), encode_hash(test::tx1c.hash(false)));
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__zero_maxfeerate__allowed)
+{
+    const auto response = rpc("testmempoolaccept", "[[\"" + encode_base16(test::tx1c.to_data(true)) + "\"], 0]");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    BOOST_REQUIRE(response.at("result").at(0).at("allowed").as_bool());
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__fee_above_maxfeerate__max_fee_exceeded)
+{
+    const auto response = rpc("testmempoolaccept", "[[\"" + encode_base16(test::tx1c.to_data(true)) + "\"], 0.00000145]");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+
+    const auto& result = response.at("result").at(0);
+    BOOST_REQUIRE(!result.at("allowed").as_bool());
+    BOOST_REQUIRE_EQUAL(as_text(result.at("reject-reason")), "max-fee-exceeded");
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__fee_at_maxfeerate__allowed)
+{
+    const auto response = rpc("testmempoolaccept", "[[\"" + encode_base16(test::tx1c.to_data(true)) + "\"], 0.00000146]");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+
+    const auto& result = response.at("result").at(0);
+    BOOST_REQUIRE(result.at("allowed").as_bool());
+    BOOST_REQUIRE(!result.as_object().contains("reject-reason"));
+}
+
 BOOST_AUTO_TEST_CASE(bitcoind_rpc__getmempoolentry__broadcast__expected)
 {
     const auto sent = rpc("sendrawtransaction", "[\"" + encode_base16(test::tx1c.to_data(true)) + "\"]");
@@ -4230,6 +4360,105 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__closed_pool__not_allowed)
     BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     BOOST_REQUIRE(!response.at("result").at(0).at("allowed").as_bool());
     BOOST_REQUIRE(response.at("result").at(0).as_object().contains("reject-reason"));
+}
+
+// A burn is rejected before submission, so the closed pool is not reached.
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__null_data_burn__verify_error)
+{
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ chain::script::to_pay_null_data_pattern({ 0x42 }) } };
+    const chain::transaction tx{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(tx.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\"]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -25), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__null_data_burn_within_maxburnamount__verify_rejected)
+{
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ chain::script::to_pay_null_data_pattern({ 0x42 }) } };
+    const chain::transaction tx{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(tx.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\", 0.1, 0.00000001]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -26), response);
+}
+
+// The burn is checked before the fee rate limit is parsed (bitcoind order).
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__null_data_burn_negative_maxfeerate__verify_error)
+{
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ chain::script::to_pay_null_data_pattern({ 0x42 }) } };
+    const chain::transaction tx{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(tx.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\", -1]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -25), response);
+}
+
+// An operation above nop10 (here reserved_186) anywhere in the script burns.
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__undefined_operation_burn__verify_error)
+{
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ data_chunk{ 0x51, 0xba }, false } };
+    const chain::transaction tx{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(tx.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\"]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -25), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__truncated_push_burn__verify_error)
+{
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ data_chunk{ 0x4c }, false } };
+    const chain::transaction tx{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(tx.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\"]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -25), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__oversized_push_burn__verify_error)
+{
+    data_chunk bytes{ 0x4d, 0x09, 0x02 };
+    bytes.resize(bytes.size() + add1(chain::max_push_data_size));
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ bytes, false } };
+    const chain::transaction tx{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(tx.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\"]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -25), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__oversized_script_burn__verify_error)
+{
+    const data_chunk bytes(add1(chain::max_script_size), 0x61);
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ bytes, false } };
+    const chain::transaction tx{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(tx.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\"]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -25), response);
+}
+
+// A leading reserved_80 is not a burn (only op_return is), so the pool is reached.
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__reserved_operation__verify_rejected)
+{
+    const chain::input input{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ data_chunk{ 0x50 }, false } };
+    const chain::transaction tx{ 1, { input }, { output }, 0 };
+    const auto hex = encode_base16(tx.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\"]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -26), response);
+}
+
+// A null point is not read for the fee, so validation (here the pool) rejects.
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__null_point_non_coinbase__verify_rejected)
+{
+    const chain::input spend{ chain::point{ one_hash, 0 }, {}, 0xffffffff };
+    const chain::input null{ chain::point{}, {}, 0xffffffff };
+    const chain::output output{ 1, chain::script{ chain::script::to_pay_key_hash_pattern({ 0x42 }) } };
+    const chain::transaction tx{ 1, { spend, null }, { output }, 0 };
+    const auto hex = encode_base16(tx.to_data(true));
+    const auto response = rpc("sendrawtransaction", "[\"" + hex + "\"]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -26), response);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
