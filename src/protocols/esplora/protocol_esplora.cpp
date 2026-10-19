@@ -193,13 +193,21 @@ void protocol_esplora::handle_receive_post(const code& ec,
         return;
     }
 
-    if (!post->body().contains<http::string_value>())
+    // The esplora body is hex, whether read as text or data.
+    const auto& body = post->body();
+    if (body.contains<http::string_value>())
+    {
+        set_body(model, body.get<http::string_value>());
+    }
+    else if (body.contains<http::data_value>())
+    {
+        set_body(model, to_string(body.get<http::data_value>()));
+    }
+    else
     {
         send_bad_request(*post);
         return;
     }
-
-    set_body(model, post->body().get<http::string_value>());
 
     if (const auto code = dispatcher_.notify(model))
         send_internal_server_error(code, *post);

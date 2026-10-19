@@ -133,6 +133,12 @@ BOOST_AUTO_TEST_CASE(esplora__broadcast__truncated__bad_request)
     BOOST_REQUIRE_EQUAL(post_status("/tx", "0100000001"), http::status::bad_request);
 }
 
+BOOST_AUTO_TEST_CASE(esplora__broadcast__octet_stream_invalid_encoding__invalid_argument)
+{
+    const code invalid_argument{ server::error::invalid_argument };
+    BOOST_REQUIRE_EQUAL(post_text("/tx", "xxxx", http::field::content_type, "application/octet-stream"), invalid_argument.message());
+}
+
 // The tx chaser refuses submission while the pool is closed.
 BOOST_AUTO_TEST_CASE(esplora__broadcast__closed_pool__pooling_disabled)
 {
@@ -330,6 +336,12 @@ BOOST_AUTO_TEST_CASE(esplora__broadcast__duplicate__txid)
     const auto tx1c = encode_base16(test::tx1c.to_data(true));
     BOOST_REQUIRE_EQUAL(post_text("/tx", tx1c), encode_hash(test::tx1c.hash(false)));
     BOOST_REQUIRE_EQUAL(post_text("/tx", tx1c), encode_hash(test::tx1c.hash(false)));
+}
+
+BOOST_AUTO_TEST_CASE(esplora__broadcast__octet_stream__txid)
+{
+    const auto tx1c = encode_base16(test::tx1c.to_data(true));
+    BOOST_REQUIRE_EQUAL(post_text("/tx", tx1c, http::field::content_type, "application/octet-stream"), encode_hash(test::tx1c.hash(false)));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
