@@ -124,7 +124,7 @@ void protocol_electrum::handle_blockchain_transaction_broadcast_package(
     }
 
     const auto& txs_hex = std::get<array_t>(raw_txs.value());
-    if (txs_hex.empty())
+    if (txs_hex.empty() || txs_hex.size() > maximum_test_txs)
     {
         send_code(error::electrum::bad_request);
         return;

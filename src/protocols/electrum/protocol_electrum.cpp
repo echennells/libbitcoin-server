@@ -226,8 +226,12 @@ void protocol_electrum::do_reorganized(node::header_t) NOEXCEPT
         // Reset (not flush) the accumulator to its initial (IV) state; flush()
         // pads in place, leaving non-IV state that would poison re-accumulation.
         sub.accumulator.reset();
+        sub.confirmed = false;
         sub.status = {};
         sub.cursor = {};
+
+        // Notify the next status even if null, as history may become empty.
+        sub.reset = true;
     }
 }
 
