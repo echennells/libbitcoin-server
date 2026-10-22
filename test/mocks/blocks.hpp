@@ -86,6 +86,7 @@ extern const system::chain::block block8;
 extern const system::chain::block block9;
 extern const system::chain::block mock_block10;
 extern const system::chain::block mock_block11;
+extern const system::chain::block mock_block11_conflict;
 extern const system::chain::block mock_block12;
 
 extern const system::chain::transaction mock_tx13;
@@ -102,6 +103,10 @@ extern const system::chain::block block2b;
 extern const system::chain::transaction tx2b;
 extern const system::chain::block block1c;
 extern const system::chain::transaction tx1c;
+extern const system::chain::transaction tx1c_conflict;
+extern const system::chain::block block2c;
+extern const system::chain::transaction tx1c_witness;
+extern const system::chain::block block2d;
 
 bool setup_ten_block_store(query_t& query, uint32_t top_flags=0) NOEXCEPT;
 bool setup_three_block_store(query_t& query) NOEXCEPT;
@@ -111,6 +116,9 @@ bool setup_three_block_unconfirmed_address_store(query_t& query) NOEXCEPT;
 bool setup_broadcast_store(query_t& query) NOEXCEPT;
 bool setup_unassociated_store(query_t& query) NOEXCEPT;
 bool setup_dangling_store(query_t& query) NOEXCEPT;
+bool pool_archived(query_t& query,
+    const system::chain::transaction& tx) NOEXCEPT;
+bool pool_archived(query_t& query, const system::chain::block& block) NOEXCEPT;
 
 // TODO: move.
 boost::json::value parse_json(std::string_view value) NOEXCEPT;

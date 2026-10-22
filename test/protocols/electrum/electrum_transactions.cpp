@@ -122,6 +122,48 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_transaction_broadcast_package__empty__
     BOOST_REQUIRE_EQUAL(response.at("error").as_object().at("code").as_int64(), invalid_argument.value());
 }
 
+BOOST_AUTO_TEST_CASE(electrum__blockchain_transaction_broadcast_package__exceeds_maximum__invalid_argument)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_6));
+
+    // One more than the maximum of 25 txs.
+    const auto tx0_text = encode_base16(test::genesis.transactions_ptr()->front()->to_data(true));
+    const auto txs = join(string_list(26, "\"" + tx0_text + "\""), ",");
+    constexpr auto request = R"({{"id":76,"method":"blockchain.transaction.broadcast_package","params":[[{}]]}})" "\n";
+    const auto response = get(std::format(request, txs));
+    REQUIRE_NO_THROW_TRUE(response.at("error").as_object().at("code").is_int64());
+    BOOST_REQUIRE_EQUAL(response.at("error").as_object().at("code").as_int64(), invalid_argument.value());
+}
+
+BOOST_AUTO_TEST_CASE(electrum__blockchain_transaction_broadcast_package__maximum_coinbases__internal_double_spend)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_6));
+
+    // The maximum of 25 txs, which spend the same null point.
+    const auto tx0_text = encode_base16(test::genesis.transactions_ptr()->front()->to_data(true));
+    const auto tx0_hash = encode_hash(test::genesis.transactions_ptr()->front()->hash(false));
+    const auto txs = join(string_list(25, "\"" + tx0_text + "\""), ",");
+    constexpr auto request = R"({{"id":76,"method":"blockchain.transaction.broadcast_package","params":[[{}]]}})" "\n";
+    const auto response = get(std::format(request, txs));
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_object());
+
+    const auto& result = response.at("result").as_object();
+    REQUIRE_NO_THROW_TRUE(result.at("success").is_bool());
+    REQUIRE_NO_THROW_TRUE(result.at("errors").is_array());
+    BOOST_REQUIRE(!result.at("success").as_bool());
+
+    const auto& errors = result.at("errors").as_array();
+    BOOST_REQUIRE_EQUAL(errors.size(), 1u);
+    BOOST_REQUIRE(errors.at(0).is_object());
+
+    const auto& error1 = errors.at(0).as_object();
+    REQUIRE_NO_THROW_TRUE(error1.at("txid").is_string());
+    REQUIRE_NO_THROW_TRUE(error1.at("error").is_string());
+    BOOST_REQUIRE_EQUAL(error1.at("txid").as_string(), tx0_hash);
+    BOOST_REQUIRE_EQUAL(error1.at("error").as_string(), internal_double_spend.message());
+}
+
 BOOST_AUTO_TEST_CASE(electrum__blockchain_transaction_broadcast_package__not_string__invalid_argument)
 {
     BOOST_REQUIRE(handshake(electrum::version::v1_6));
@@ -728,6 +770,188 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_get_mempool__broadcast__rec
     BOOST_REQUIRE_EQUAL(tx.at("height").as_int64(), 0);  // rooted
     BOOST_REQUIRE_EQUAL(tx.at("tx_hash").as_string(), tx1c_hash());
     BOOST_REQUIRE_EQUAL(tx.at("fee").as_int64(), tx1c_fee);
+}
+
+BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_get_history__broadcast_conflicted__excluded)
+{
+    BOOST_REQUIRE(query_.address_enabled());
+    BOOST_REQUIRE(handshake(electrum::version::v1_4));
+
+    constexpr auto broadcast = R"({{"id":2010,"method":"blockchain.transaction.broadcast","params":["{}"]}})" "\n";
+    BOOST_REQUIRE(get(std::format(broadcast, tx1c_text())).as_object().contains("result"));
+
+    // A confirmed block spends the output that tx1c spends.
+    BOOST_REQUIRE(query_.set(test::block2c, database::context{ 0, 2, 0 }, {}, false, false));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::block2c.hash()), true));
+
+    constexpr auto request = R"({{"id":2011,"method":"blockchain.scripthash.get_history","params":["{}"]}})" "\n";
+    const auto received = get(std::format(request, received_scripthash()));
+    REQUIRE_NO_THROW_TRUE(received.at("result").is_array());
+    BOOST_REQUIRE(received.at("result").as_array().empty());
+
+    constexpr auto pooled = R"({{"id":2012,"method":"blockchain.scripthash.get_mempool","params":["{}"]}})" "\n";
+    const auto pending = get(std::format(pooled, received_scripthash()));
+    REQUIRE_NO_THROW_TRUE(pending.at("result").is_array());
+    BOOST_REQUIRE(pending.at("result").as_array().empty());
+
+    // The archived funding tx, followed by its confirmed spend (not tx1c).
+    const auto spent = get(std::format(request, spent_scripthash()));
+    REQUIRE_NO_THROW_TRUE(spent.at("result").is_array());
+
+    const auto& history = spent.at("result").as_array();
+    BOOST_REQUIRE_EQUAL(history.size(), 2u);
+    BOOST_REQUIRE_EQUAL(history.front().as_object().at("height").as_int64(), 1);
+    BOOST_REQUIRE_EQUAL(history.back().as_object().at("height").as_int64(), 2);
+    BOOST_REQUIRE_EQUAL(history.back().as_object().at("tx_hash").as_string(), encode_hash(test::tx1c_conflict.hash(false)));
+}
+
+BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__pooled_conflicted__null_status)
+{
+    BOOST_REQUIRE(query_.address_enabled());
+    BOOST_REQUIRE(handshake(electrum::version::v1_4));
+
+    BOOST_REQUIRE(query_.set(test::tx1c));
+    BOOST_REQUIRE(test::pool_archived(query_, test::tx1c));
+
+    constexpr auto request = R"({{"id":2013,"method":"blockchain.scripthash.subscribe","params":["{}"]}})" "\n";
+    const auto before = get(std::format(request, received_scripthash()));
+    REQUIRE_NO_THROW_TRUE(before.at("result").is_string());
+    BOOST_REQUIRE_EQUAL(before.at("result").as_string(), encode_base16(sha256_hash(tx1c_hash() + ":0:")));
+
+    // A confirmed block spends the output that tx1c spends.
+    BOOST_REQUIRE(query_.set(test::block2c, database::context{ 0, 2, 0 }, {}, false, false));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::block2c.hash()), true));
+
+    // The repeat call recomputes the status of the same subscription.
+    const auto after = get(std::format(request, received_scripthash()));
+    BOOST_REQUIRE_MESSAGE(after.is_object() && after.as_object().contains("result"), serialize(after));
+    BOOST_REQUIRE(after.at("result").is_null());
+}
+
+BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__pooled_conflicted__null_notification)
+{
+    BOOST_REQUIRE(query_.address_enabled());
+    BOOST_REQUIRE(handshake(electrum::version::v1_4));
+
+    BOOST_REQUIRE(query_.set(test::tx1c));
+    BOOST_REQUIRE(test::pool_archived(query_, test::tx1c));
+
+    constexpr auto request = R"({{"id":2015,"method":"blockchain.scripthash.subscribe","params":["{}"]}})" "\n";
+    const auto before = get(std::format(request, received_scripthash()));
+    REQUIRE_NO_THROW_TRUE(before.at("result").is_string());
+    BOOST_REQUIRE_EQUAL(before.at("result").as_string(), encode_base16(sha256_hash(tx1c_hash() + ":0:")));
+
+    // A confirmed block spends the output that tx1c spends.
+    BOOST_REQUIRE(query_.set(test::block2c, database::context{ 0, 2, 0 }, {}, false, false));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::block2c.hash()), true));
+
+    // Trigger node chaser event to electrum event subscriber.
+    notify(node::chases::organized{ 0 });
+
+    const auto notification = receive();
+    REQUIRE_NO_THROW_TRUE(notification.at("method").is_string());
+    REQUIRE_NO_THROW_TRUE(notification.at("params").is_array());
+    BOOST_REQUIRE_EQUAL(notification.at("method").as_string(), "blockchain.scripthash.subscribe");
+
+    const auto& params = notification.at("params").as_array();
+    BOOST_REQUIRE_EQUAL(params.size(), 2u);
+    BOOST_REQUIRE_EQUAL(params.at(0).as_string(), received_scripthash());
+    BOOST_REQUIRE(params.at(1).is_null());
+}
+
+BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__reorganized_conflicted__null_notification)
+{
+    BOOST_REQUIRE(query_.address_enabled());
+    BOOST_REQUIRE(handshake(electrum::version::v1_4));
+
+    BOOST_REQUIRE(query_.set(test::tx1c));
+    BOOST_REQUIRE(test::pool_archived(query_, test::tx1c));
+
+    constexpr auto request = R"({{"id":2017,"method":"blockchain.scripthash.subscribe","params":["{}"]}})" "\n";
+    const auto before = get(std::format(request, received_scripthash()));
+    REQUIRE_NO_THROW_TRUE(before.at("result").is_string());
+    BOOST_REQUIRE_EQUAL(before.at("result").as_string(), encode_base16(sha256_hash(tx1c_hash() + ":0:")));
+
+    // A confirmed block spends the output that tx1c spends.
+    BOOST_REQUIRE(query_.set(test::block2c, database::context{ 0, 2, 0 }, {}, false, false));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::block2c.hash()), true));
+
+    // Reorg resets the status to null, and the following organized event
+    // recomputes it from the now empty history (null), which must notify.
+    notify(node::chases::reorganized{ 0 });
+    notify(node::chases::organized{ 0 });
+
+    const auto notification = receive();
+    REQUIRE_NO_THROW_TRUE(notification.at("method").is_string());
+    REQUIRE_NO_THROW_TRUE(notification.at("params").is_array());
+    BOOST_REQUIRE_EQUAL(notification.at("method").as_string(), "blockchain.scripthash.subscribe");
+
+    const auto& params = notification.at("params").as_array();
+    BOOST_REQUIRE_EQUAL(params.size(), 2u);
+    BOOST_REQUIRE_EQUAL(params.at(0).as_string(), received_scripthash());
+    BOOST_REQUIRE(params.at(1).is_null());
+}
+
+BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_subscribe__broadcast_conflicted__empty_notification)
+{
+    BOOST_REQUIRE(query_.address_enabled());
+    BOOST_REQUIRE(handshake(electrum::version::v1_7));
+
+    constexpr auto broadcast = R"({{"id":2019,"method":"blockchain.transaction.broadcast","params":["{}"]}})" "\n";
+    BOOST_REQUIRE(get(std::format(broadcast, tx1c_text())).as_object().contains("result"));
+
+    // tx1c output0 [unconfirmed rooted], unspent.
+    constexpr auto request = R"({{"id":2020,"method":"blockchain.outpoint.subscribe","params":["{}",0]}})" "\n";
+    const auto response = get(std::format(request, tx1c_hash()));
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_object());
+    BOOST_REQUIRE_EQUAL(response.at("result").as_object().at("funder_height").as_int64(), 0);
+    BOOST_REQUIRE(!response.at("result").as_object().contains("spender_txhash"));
+
+    // A confirmed block spends the output that tx1c spends.
+    BOOST_REQUIRE(query_.set(test::block2c, database::context{ 0, 2, 0 }, {}, false, false));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::block2c.hash()), true));
+
+    // Trigger node chaser event to electrum event subscriber.
+    notify(node::chases::organized{ 0 });
+
+    const auto notification = receive();
+    REQUIRE_NO_THROW_TRUE(notification.at("method").is_string());
+    REQUIRE_NO_THROW_TRUE(notification.at("params").is_array());
+    BOOST_REQUIRE_EQUAL(notification.at("method").as_string(), "blockchain.outpoint.subscribe");
+
+    // The funder is not pooled and confirmable, so the status is empty.
+    const auto& params = notification.at("params").as_array();
+    BOOST_REQUIRE_EQUAL(params.size(), 3u);
+    BOOST_REQUIRE_EQUAL(params.at(0).as_string(), tx1c_hash());
+    BOOST_REQUIRE_EQUAL(params.at(1).as_int64(), 0);
+    REQUIRE_NO_THROW_TRUE(params.at(2).as_object().empty());
+}
+
+BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_get_status__archived_witness_instance__pooled_funder)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_7));
+
+    BOOST_REQUIRE(query_.set(test::tx1c));
+    BOOST_REQUIRE(test::pool_archived(query_, test::tx1c));
+
+    // An unconfirmed block archives tx1c with a witness, an unpooled instance
+    // of tx1c that its hash resolves to.
+    BOOST_REQUIRE(query_.set(test::block2d, database::context{ 0, 2, 0 }, {}, false, false));
+    BOOST_REQUIRE_EQUAL(query_.to_duplicates(test::tx1c.hash(false)).size(), 2u);
+    BOOST_REQUIRE(!query_.is_pooled(query_.to_tx(test::tx1c.hash(false))));
+
+    // tx1c output0 [unconfirmed rooted], unspent.
+    constexpr auto request = R"({{"id":2021,"method":"blockchain.outpoint.get_status","params":["{}",0]}})" "\n";
+    const auto response = get(std::format(request, tx1c_hash()));
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_object());
+
+    // The funder is the pooled instance.
+    const auto& status = response.at("result").as_object();
+    REQUIRE_NO_THROW_TRUE(status.at("funder_height").is_int64());
+    BOOST_REQUIRE_EQUAL(status.at("funder_height").as_int64(), 0);
+    BOOST_REQUIRE(!status.contains("spender_txhash"));
+    BOOST_REQUIRE(!status.contains("spender_height"));
 }
 
 // The configured rate is btc/vkb, so derive it from the tx1c rate to pin the

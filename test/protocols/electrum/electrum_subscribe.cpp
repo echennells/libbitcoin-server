@@ -89,6 +89,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_address_subscribe__initialization__exp
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block10.hash()), true));
 
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
@@ -116,6 +118,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_address_subscribe__repeat_call__idempo
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block10.hash()), true));
 
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
@@ -153,6 +157,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_address_subscribe__progressive__expect
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
     const auto hash11 = test::mock_block11.transactions_ptr()->at(0)->hash(false);
     const auto hash12 = test::mock_block12.transactions_ptr()->at(0)->hash(false);
@@ -206,6 +212,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_address_subscribe__progressive_notify_
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
     const auto hash11 = test::mock_block11.transactions_ptr()->at(0)->hash(false);
     const auto hash12 = test::mock_block12.transactions_ptr()->at(0)->hash(false);
@@ -328,6 +336,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__initialization__
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block10.hash()), true));
 
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
@@ -355,6 +365,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__repeat_call__ide
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block10.hash()), true));
 
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
@@ -392,6 +404,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__progressive__exp
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
     const auto hash11 = test::mock_block11.transactions_ptr()->at(0)->hash(false);
     const auto hash12 = test::mock_block12.transactions_ptr()->at(0)->hash(false);
@@ -445,6 +459,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__progressive_noti
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
     const auto hash11 = test::mock_block11.transactions_ptr()->at(0)->hash(false);
     const auto hash12 = test::mock_block12.transactions_ptr()->at(0)->hash(false);
@@ -528,6 +544,7 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__transaction_noti
     BOOST_REQUIRE_EQUAL(response.at("result").as_string(), expected_initial);
 
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
     const auto expected_rooted11 = encode_base16(sha256_hash
     (
         encode_hash(hash10) + ":10:" +
@@ -547,6 +564,49 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__transaction_noti
     BOOST_REQUIRE(params.at(1).is_string());
     BOOST_REQUIRE_EQUAL(params.at(0).as_string(), found_scripthash);
     BOOST_REQUIRE_EQUAL(params.at(1).as_string(), expected_rooted11);
+}
+
+BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__confirmed_and_conflicted__confirmed_status)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_1));
+
+    BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
+    BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block10.hash()), true));
+    const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
+    const auto hash11 = test::mock_block11.transactions_ptr()->at(0)->hash(false);
+    const auto expected_rooted11 = encode_base16(sha256_hash
+    (
+        encode_hash(hash10) + ":10:" +
+        encode_hash(hash11) + ":0:"
+    ));
+
+    constexpr auto request = R"({{"id":1101,"method":"blockchain.scripthash.subscribe","params":["{}"]}})" "\n";
+    const auto response = get(std::format(request, found_scripthash));
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
+    BOOST_REQUIRE_EQUAL(response.at("result").as_string(), expected_rooted11);
+
+    // A confirmed block spends an output that block 11 spends.
+    BOOST_REQUIRE(query_.set(test::mock_block11_conflict, database::context{ 0, 11, 0 }, {}, false, false));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block11_conflict.hash()), true));
+    const auto expected_confirmed = encode_base16(sha256_hash(encode_hash(hash10) + ":10:"));
+
+    // Trigger node chaser event to electrum event subscriber.
+    notify(node::chases::organized{ 0 });
+
+    const auto notification = receive();
+    REQUIRE_NO_THROW_TRUE(notification.at("method").is_string());
+    REQUIRE_NO_THROW_TRUE(notification.at("params").is_array());
+    BOOST_REQUIRE_EQUAL(notification.at("method").as_string(), "blockchain.scripthash.subscribe");
+
+    // The status returns to that of the confirmed history (not null).
+    const auto& params = notification.at("params").as_array();
+    BOOST_REQUIRE_EQUAL(params.size(), 2u);
+    BOOST_REQUIRE(params.at(0).is_string());
+    BOOST_REQUIRE(params.at(1).is_string());
+    BOOST_REQUIRE_EQUAL(params.at(0).as_string(), found_scripthash);
+    BOOST_REQUIRE_EQUAL(params.at(1).as_string(), expected_confirmed);
 }
 
 BOOST_AUTO_TEST_CASE(electrum__blockchain_scripthash_subscribe__history_exceeds_maximum__excessive_history)
@@ -693,6 +753,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scriptpubkey_subscribe__initialization
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block10.hash()), true));
 
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
@@ -720,6 +782,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scriptpubkey_subscribe__repeat_call__i
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::mock_block10.hash()), true));
 
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
@@ -757,6 +821,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scriptpubkey_subscribe__progressive__e
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
     const auto hash11 = test::mock_block11.transactions_ptr()->at(0)->hash(false);
     const auto hash12 = test::mock_block12.transactions_ptr()->at(0)->hash(false);
@@ -810,6 +876,8 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_scriptpubkey_subscribe__progressive_no
     BOOST_REQUIRE(query_.set(test::mock_block10, database::context{ 0, 10, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block11, database::context{ 0, 11, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::mock_block12, database::context{ 0, 12, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block11));
+    BOOST_REQUIRE(test::pool_archived(query_, test::mock_block12));
     const auto hash10 = test::mock_block10.transactions_ptr()->at(1)->hash(false);
     const auto hash11 = test::mock_block11.transactions_ptr()->at(0)->hash(false);
     const auto hash12 = test::mock_block12.transactions_ptr()->at(0)->hash(false);
