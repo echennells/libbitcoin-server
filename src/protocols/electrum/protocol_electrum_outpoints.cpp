@@ -262,7 +262,7 @@ void protocol_electrum::do_outpoint(node::header_t) NOEXCEPT
         const auto& prevout = subscription.first;
 
         outpoint_subscription out{};
-        if (!get_outpoint_history(out, prevout))
+        if (!get_outpoint_history(out, prevout) && !sub.outpoint.valid())
         {
             LOGV("Electrum::do_outpoint, outpoint not found.");
             continue;
@@ -272,7 +272,12 @@ void protocol_electrum::do_outpoint(node::header_t) NOEXCEPT
         if (sub == out) continue;
 
         const auto height = out.outpoint.tx.height();
-        if (!sub.outpoint.valid() || height != sub.outpoint.tx.height())
+        if (!out.outpoint.valid())
+        {
+            // Outpoint left history (conflicted), send empty status.
+            POST(outpoint_notify, std::make_unique<object_t>(), prevout);
+        }
+        else if (!sub.outpoint.valid() || height != sub.outpoint.tx.height())
         {
             // Outpoint found or changed height, send all current spenders.
             if (out.spenders.empty())
@@ -286,8 +291,15 @@ void protocol_electrum::do_outpoint(node::header_t) NOEXCEPT
         }
         else
         {
-            // Outpoint unchanged, send only new or changed spenders.
-            for (const auto& spender: difference(out.spenders, sub.spenders))
+            // Outpoint unchanged, send only new or changed spenders, or the
+            // current status if only a spender left history (conflicted).
+            const auto spenders = difference(out.spenders, sub.spenders);
+            if (spenders.empty())
+            {
+                POST(outpoint_notify, std::make_unique<object_t>(
+                    to_outpoint_status(out)), prevout);
+            }
+            else for (const auto& spender: spenders)
             {
                 POST(outpoint_notify, make_status(height, spender), prevout);
             }
@@ -355,7 +367,13 @@ bool protocol_electrum::get_outpoint_history(outpoint_subscription& out,
     const point& prevout) const NOEXCEPT
 {
     const auto& query = archive();
-    out.outpoint = query.get_tx_history(query.to_tx(prevout.hash()));
+
+    // The funder is the first instance with a history (confirmed or pooled).
+    out.outpoint = {};
+    for (const auto& link: query.to_duplicates(prevout.hash()))
+        if (out.outpoint = query.get_tx_history(link); out.outpoint.valid())
+            break;
+
     if (!out.outpoint.valid())
     {
         out.spenders.clear();

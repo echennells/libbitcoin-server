@@ -3839,6 +3839,7 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__sendrawtransaction__archived_unconfirmed__txi
 {
     const auto& tx = *test::mock_block10.transactions_ptr()->at(1);
     BOOST_REQUIRE(query_.set(tx));
+    BOOST_REQUIRE(test::pool_archived(query_, tx));
 
     const auto response = rpc("sendrawtransaction", "[\"" + encode_base16(tx.to_data(true)) + "\"]");
     BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
@@ -3869,6 +3870,27 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__empty__error)
 {
     const auto response = rpc("testmempoolaccept", "[[]]");
     BOOST_REQUIRE(has_error(response));
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__exceeds_maximum__invalid_parameter)
+{
+    // One more than the maximum of 25 txs.
+    const auto tx0 = encode_base16(test::genesis.transactions_ptr()->front()->to_data(true));
+    const auto txs = join(string_list(26, "\"" + tx0 + "\""), ",");
+    const auto response = rpc("testmempoolaccept", "[[" + txs + "]]");
+    BOOST_REQUIRE_MESSAGE(has_code(response, -8), response);
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__maximum_coinbases__missingorspent_token)
+{
+    // The maximum of 25 txs, which spend the same null point.
+    const auto tx0 = encode_base16(test::genesis.transactions_ptr()->front()->to_data(true));
+    const auto txs = join(string_list(25, "\"" + tx0 + "\""), ",");
+    const auto response = rpc("testmempoolaccept", "[[" + txs + "]]");
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_array());
+    BOOST_REQUIRE_EQUAL(response.at("result").as_array().size(), 25u);
+    BOOST_REQUIRE_EQUAL(response.at("result").at(0).at("reject-reason").as_string(), "bad-txns-inputs-missingorspent");
 }
 
 BOOST_AUTO_TEST_CASE(bitcoind_rpc__testmempoolaccept__coinbase__coinbase_token)
@@ -4012,6 +4034,24 @@ BOOST_AUTO_TEST_CASE(bitcoind_rpc__getdescriptoractivity__broadcast__mempool_rec
     BOOST_REQUIRE(!activity.at(0).as_object().contains("blockhash"));
     BOOST_REQUIRE(!activity.at(0).as_object().contains("height"));
     BOOST_REQUIRE(excluded.at("result").at("activity").as_array().empty());
+}
+
+BOOST_AUTO_TEST_CASE(bitcoind_rpc__getdescriptoractivity__broadcast_conflicted__no_mempool_receive)
+{
+    const auto sent = rpc("sendrawtransaction", "[\"" + encode_base16(test::tx1c.to_data(true)) + "\"]");
+    BOOST_REQUIRE_MESSAGE(sent.is_object() && sent.as_object().contains("result"), serialize(sent));
+
+    // A confirmed block spends the output that tx1c spends.
+    BOOST_REQUIRE(query_.set(test::block2c, database::context{ 0, 2, 0 }, {}, false, false));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::block2c.hash()), true));
+
+    // The pool excludes the conflicted tx.
+    const auto pool = rpc("getrawmempool", "[]");
+    REQUIRE_NO_THROW_TRUE(pool.at("result").as_array().empty());
+
+    const auto script = encode_base16(test::tx1c.outputs_ptr()->front()->script().to_data(false));
+    const auto included = rpc("getdescriptoractivity", "[[], [\"raw(" + script + ")\"]]");
+    REQUIRE_NO_THROW_TRUE(included.at("result").at("activity").as_array().empty());
 }
 
 BOOST_AUTO_TEST_CASE(bitcoind_rpc__getrawmempool__broadcast__txid)

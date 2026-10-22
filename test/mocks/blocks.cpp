@@ -94,6 +94,26 @@ boost::json::value parse_json(std::string_view value) NOEXCEPT
     }
 }
 
+// Pool the archived tx as the node does, populated for its pooled fee.
+bool pool_archived(query_t& query, const transaction& tx) NOEXCEPT
+{
+    // A copy, as population would mutate the shared mock.
+    const transaction copy{ tx.to_data(true), true };
+    return query.populate_with_metadata(copy) &&
+        query.set_pooled(query.to_tx(copy.hash(false)), copy,
+            database::context{}, 0);
+}
+
+// Pool the archived txs of the block (a coinbase is never pooled).
+bool pool_archived(query_t& query, const block& block) NOEXCEPT
+{
+    const auto& txs = *block.transactions_ptr();
+    return std::all_of(txs.begin(), txs.end(), [&](const auto& tx) NOEXCEPT
+    {
+        return tx->is_coinbase() || pool_archived(query, *tx);
+    });
+}
+
 bool setup_ten_block_store(query_t& query, uint32_t top_flags) NOEXCEPT
 {
     // All ten headers share bits, so cumulative work is height+1 proofs.
@@ -175,6 +195,7 @@ bool setup_dangling_store(query_t& query) NOEXCEPT
         query.push_confirmed(database::header_link{ 42 }, false);
 }
 
+// The unconfirmed txs tx4 and tx5 are pooled.
 bool setup_three_block_unconfirmed_address_store(query_t& query) NOEXCEPT
 {
     return query.initialize(genesis) &&
@@ -182,7 +203,9 @@ bool setup_three_block_unconfirmed_address_store(query_t& query) NOEXCEPT
         query.set(block2a, database::context{ 0, 2, 0 }, {}, false, false) &&
         query.set(test::tx4) &&
         query.set(test::tx5) &&
-        query.set(block3a, database::context{ 0, 3, 0 }, {}, false, false);
+        query.set(block3a, database::context{ 0, 3, 0 }, {}, false, false) &&
+        pool_archived(query, test::tx4) &&
+        pool_archived(query, test::tx5);
 }
 
 const block mock_block10
@@ -362,6 +385,47 @@ const block mock_block11
                     0x14,
                     // "31xsx7sPoS2UfoUAKfoXLX6wTPvpetyo7s"
                     script::to_pay_script_hash_pattern({ 0x03 })
+                }
+            },
+            0x0a
+        }
+    }
+};
+
+// Spends the block4 output that mock_block11 spends, paying another script.
+// Confirmed at height 11, it conflicts mock_block11 out of the pool.
+const block mock_block11_conflict
+{
+    header
+    {
+        0x31323334,
+        mock_block10.hash(),
+        hash_digest{ 0x11, 0xcc },
+        0x41424344,
+        0x51525354,
+        0x61626364
+    },
+    transactions
+    {
+        transaction
+        {
+            0x07,
+            inputs
+            {
+                input
+                {
+                    point{ block4.transactions_ptr()->front()->hash(false), 0x00 },
+                    script{},
+                    witness{},
+                    0x09
+                }
+            },
+            outputs
+            {
+                output
+                {
+                    0x10,
+                    script::to_pay_key_hash_pattern({ 0x01 })
                 }
             },
             0x0a
@@ -941,6 +1005,92 @@ const transaction tx1c
         }
     },
     0x00            // locktime (not absolute locked)
+};
+
+// Spends the block1c output, as tx1c does, paying another script. Confirmed
+// by block2c, it conflicts tx1c out of the pool.
+const transaction tx1c_conflict
+{
+    0x01,           // version
+    inputs
+    {
+        input
+        {
+            point{ block1c.transactions_ptr()->front()->hash(false), 0x00 },
+            script{ { { opcode::push_positive_1 } } },
+            witness{},
+            max_uint32  // sequence (not relative locked)
+        }
+    },
+    outputs
+    {
+        output
+        {
+            0x50,   // value (80, fee of 20)
+            script{ { { opcode::push_positive_3 } } }
+        }
+    },
+    0x00            // locktime (not absolute locked)
+};
+const block block2c
+{
+    header
+    {
+        0x31323334,         // version
+        block1c.hash(),     // previous_block_hash
+        hash_digest{ 0x2c },// merkle_root
+        0x41424344,         // timestamp
+        0x51525354,         // bits
+        0x61626364          // nonce
+    },
+    transactions
+    {
+        // This first transaction is *not* a coinbase.
+        tx1c_conflict
+    }
+};
+
+// tx1c with a witness, so another instance of tx1c (same txid). Archived by
+// block2d (not confirmed), this instance is not pooled.
+const transaction tx1c_witness
+{
+    0x01,           // version
+    inputs
+    {
+        input
+        {
+            point{ block1c.transactions_ptr()->front()->hash(false), 0x00 },
+            script{ { { opcode::push_positive_1 } } },
+            witness{ "[1c1c1c]" },
+            max_uint32  // sequence (not relative locked)
+        }
+    },
+    outputs
+    {
+        output
+        {
+            0x5a,   // value (90, fee of 10)
+            script{ { { opcode::push_positive_2 } } }
+        }
+    },
+    0x00            // locktime (not absolute locked)
+};
+const block block2d
+{
+    header
+    {
+        0x31323334,         // version
+        block1c.hash(),     // previous_block_hash
+        hash_digest{ 0x2d },// merkle_root
+        0x41424344,         // timestamp
+        0x51525354,         // bits
+        0x61626364          // nonce
+    },
+    transactions
+    {
+        // This first transaction is *not* a coinbase.
+        tx1c_witness
+    }
 };
 
 // Pays found_address, spent by a later transaction in the same block.

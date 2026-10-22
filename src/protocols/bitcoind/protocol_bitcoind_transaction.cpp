@@ -42,6 +42,9 @@ BC_PUSH_WARNING(NO_THROW_IN_NOEXCEPT)
 BC_PUSH_WARNING(SMART_PTR_NOT_NEEDED)
 BC_PUSH_WARNING(NO_VALUE_OR_CONST_REF_SHARED_PTR)
 
+// bitcoind's package limit (testmempoolaccept accepts 1 to 25 txs).
+constexpr size_t maximum_test_txs = 25;
+
 // Start.
 // ----------------------------------------------------------------------------
 
@@ -268,7 +271,7 @@ void protocol_bitcoind_transaction::complete_submit_tx(const code& ec,
     if (stopped())
         return;
 
-    // A stored unconfirmed tx is accepted, and a stored confirmed tx has only
+    // A pooled unconfirmed tx is accepted, and a stored confirmed tx has only
     // spent outputs (any unspent output is reported before submission).
     if (ec == node::error::duplicate_transaction)
     {
@@ -306,7 +309,7 @@ bool protocol_bitcoind_transaction::handle_test_mempool_accept(const code& ec,
     if (stopped(ec))
         return false;
 
-    if (rawtxs.empty())
+    if (rawtxs.empty() || rawtxs.size() > maximum_test_txs)
     {
         send_error(error::bitcoind::invalid_parameter);
         return true;

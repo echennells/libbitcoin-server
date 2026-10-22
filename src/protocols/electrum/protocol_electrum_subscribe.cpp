@@ -101,6 +101,9 @@ void protocol_electrum::do_scripthash_subscribe(const hash_digest& hash,
         }
         else
         {
+            // The response carries the current status, so a pending reset
+            // notification is no longer required.
+            at.first->second.reset = false;
             status = at.first->second.status;
             subscribed_address_.store(true, relaxed);
         }
@@ -211,8 +214,9 @@ void protocol_electrum::do_scripthash(node::header_t) NOEXCEPT
                 LOGF("Electrum::do_scripthash, " << ec.message());
             }
         }
-        else if (sub.status != previous)
+        else if (sub.status != previous || sub.reset)
         {
+            sub.reset = false;
             POST(scripthash_notify, sub.status, key, sub.type);
         }
     }
@@ -271,12 +275,20 @@ code protocol_electrum::get_scripthash_history(address_subscription& sub,
         limit, turbo_))
         return ec;
 
-    if (history.empty())
-        return error::success;
-
     auto it = history.cbegin();
     while (it != history.cend() && it->confirmed())
+    {
+        sub.confirmed = true;
         write_status(sub.accumulator, *it++);
+    }
+
+    // An unconfirmed tx may leave history, so status is always recomputed.
+    if (!sub.confirmed && it == history.cend())
+    {
+        // The status of an empty history is null.
+        sub.status = {};
+        return error::success;
+    }
 
     midstate copy = sub.accumulator;
     while (it != history.cend())

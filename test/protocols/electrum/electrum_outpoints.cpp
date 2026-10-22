@@ -398,10 +398,14 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_subscribe__two_spenders__one_
     BOOST_REQUIRE(query_.set(test::block2a, database::context{ 0, 2, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.set(test::block3a, database::context{ 0, 3, 0 }, {}, false, false));
     BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::block1a.hash()), true));
-    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::block2a.hash()), true));
+    BOOST_REQUIRE(test::pool_archived(query_, *test::block2a.transactions_ptr()->front()));
+    BOOST_REQUIRE(test::pool_archived(query_, *test::block3a.transactions_ptr()->front()));
     const auto hash1 = encode_hash(test::block1a.transactions_ptr()->at(0)->hash(false));
     const auto hash2 = encode_hash(test::block2a.transactions_ptr()->at(0)->hash(false));
     const auto hash3 = encode_hash(test::block3a.transactions_ptr()->at(0)->hash(false));
+
+    // block2a tx0 reports before block3a tx0 (both rooted) due to text hash sort.
+    BOOST_REQUIRE_LT(hash2, hash3);
 
     // block1a tx0 output0 [confirmed 1]
     constexpr auto request = R"({{"id":1107,"method":"blockchain.outpoint.subscribe","params":["{}",0]}})" "\n";
@@ -409,14 +413,14 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_subscribe__two_spenders__one_
     BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_object());
 
-    // spent by block2a tx0 input0 [confirmed 2]
+    // spent by block2a tx0 input0 [unconfirmed]
     // spent by block3a tx0 input1 [unconfirmed]
     const auto& result = response.at("result").as_object();
     REQUIRE_NO_THROW_TRUE(result.at("funder_height").is_int64());
     REQUIRE_NO_THROW_TRUE(result.at("spender_height").is_int64());
     REQUIRE_NO_THROW_TRUE(result.at("spender_txhash").is_string());
     BOOST_REQUIRE_EQUAL(result.at("funder_height").as_int64(), 1);
-    BOOST_REQUIRE_EQUAL(result.at("spender_height").as_int64(), 2);
+    BOOST_REQUIRE_EQUAL(result.at("spender_height").as_int64(), 0); // unconfirmed rooted
     BOOST_REQUIRE_EQUAL(result.at("spender_txhash").as_string(), hash2);
 
     const auto notification = receive();
@@ -471,38 +475,12 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_subscribe__not_found_progress
     BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").as_object().empty());
 
-    // block1a tx0 output0 [unconfirmed]
+    // block1a tx0 output0 [not found, as not pooled (missing prevouts)]
     BOOST_REQUIRE(query_.set(test::block1a, database::context{ 0, 1, 0 }, {}, false, false));
-
-    // Trigger node chaser event to electrum event subscriber.
-    notify(node::chases::organized{ 0 });
-
-    // always same
-    const auto notification1 = receive();
-    REQUIRE_NO_THROW_TRUE(notification1.at("method").is_string());
-    REQUIRE_NO_THROW_TRUE(notification1.at("params").is_array());
-    BOOST_REQUIRE_EQUAL(notification1.at("method").as_string(), "blockchain.outpoint.subscribe");
-
-    // always same
-    const auto& params1 = notification1.at("params").as_array();
-    BOOST_REQUIRE_EQUAL(params1.size(), 3u);
-    BOOST_REQUIRE(params1.at(0).is_string());
-    BOOST_REQUIRE(params1.at(1).is_number());
-    BOOST_REQUIRE(params1.at(2).is_object());
-
-    // always same
-    BOOST_REQUIRE_EQUAL(params1.at(0).as_string(), hash1);
-    BOOST_REQUIRE_EQUAL(params1.at(1).as_int64(), tx1_index0);
-
-    // Outpoint exists now, but unconfirmed and with no spender.
-    const auto& history1 = params1.at(2).as_object();
-    REQUIRE_NO_THROW_TRUE(history1.at("funder_height").is_int64());
-    BOOST_REQUIRE_EQUAL(history1.at("funder_height").as_int64(), -1); // outpoint unconfirmed
-    BOOST_REQUIRE(!history1.contains("spender_txhash"));
-    BOOST_REQUIRE(!history1.contains("spender_height"));
 
     // spend by block2a tx0 input0 [unconfirmed]
     BOOST_REQUIRE(query_.set(test::block2a, database::context{ 0, 2, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, *test::block2a.transactions_ptr()->front()));
 
     // confirm outpoint block1a tx0 input0 [confirmed]
     BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::block1a.hash()), true));
@@ -537,9 +515,11 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_subscribe__not_found_progress
 
     // spent by block3a tx0 input1 [unconfirmed]
     BOOST_REQUIRE(query_.set(test::block3a, database::context{ 0, 3, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, *test::block3a.transactions_ptr()->front()));
 
     // spent by tx4 input0 [unconfirmed]
     BOOST_REQUIRE(query_.set(test::tx4));
+    BOOST_REQUIRE(test::pool_archived(query_, test::tx4));
 
     // Trigger node chaser event to electrum event subscriber.
     notify(node::chases::organized{ 0 });
@@ -634,6 +614,67 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_subscribe__not_found_progress
     BOOST_REQUIRE_EQUAL(history5.at("spender_txhash").as_string(), hash2);
 }
 
+BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_subscribe__not_found_unrooted__funder_notification)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_7));
+
+    // Pop blocks 9-1 from default fixture.
+    query_.pop_confirmed(); // 9
+    query_.pop_confirmed(); // 8
+    query_.pop_confirmed(); // 7
+    query_.pop_confirmed(); // 6
+    query_.pop_confirmed(); // 5
+    query_.pop_confirmed(); // 4
+    query_.pop_confirmed(); // 3
+    query_.pop_confirmed(); // 2
+    query_.pop_confirmed(); // 1
+    BOOST_REQUIRE_EQUAL(query_.get_top_confirmed(), 0u);
+
+    // Doesn't yet exist.
+    const auto hash2 = encode_hash(test::block2a.transactions_ptr()->at(0)->hash(false));
+    constexpr int64_t tx2_index0{};
+
+    // block2a tx0 output0 [missing]
+    constexpr auto request = R"({{"id":1108,"method":"blockchain.outpoint.subscribe","params":["{}",{}]}})" "\n";
+    const auto response = get(std::format(request, hash2, tx2_index0));
+
+    // Not found.
+    BOOST_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").as_object().empty());
+
+    // block2a tx0 output0 [unconfirmed, unrooted as block1a tx0 is unconfirmed]
+    BOOST_REQUIRE(query_.set(test::block1a, database::context{ 0, 1, 0 }, {}, false, false));
+    BOOST_REQUIRE(query_.set(test::block2a, database::context{ 0, 2, 0 }, {}, false, false));
+    BOOST_REQUIRE(test::pool_archived(query_, *test::block2a.transactions_ptr()->front()));
+
+    // Trigger node chaser event to electrum event subscriber.
+    notify(node::chases::organized{ 0 });
+
+    // always same
+    const auto notification1 = receive();
+    REQUIRE_NO_THROW_TRUE(notification1.at("method").is_string());
+    REQUIRE_NO_THROW_TRUE(notification1.at("params").is_array());
+    BOOST_REQUIRE_EQUAL(notification1.at("method").as_string(), "blockchain.outpoint.subscribe");
+
+    // always same
+    const auto& params1 = notification1.at("params").as_array();
+    BOOST_REQUIRE_EQUAL(params1.size(), 3u);
+    BOOST_REQUIRE(params1.at(0).is_string());
+    BOOST_REQUIRE(params1.at(1).is_number());
+    BOOST_REQUIRE(params1.at(2).is_object());
+
+    // always same
+    BOOST_REQUIRE_EQUAL(params1.at(0).as_string(), hash2);
+    BOOST_REQUIRE_EQUAL(params1.at(1).as_int64(), tx2_index0);
+
+    // Outpoint exists now, but unconfirmed and with no spender.
+    const auto& history1 = params1.at(2).as_object();
+    REQUIRE_NO_THROW_TRUE(history1.at("funder_height").is_int64());
+    BOOST_REQUIRE_EQUAL(history1.at("funder_height").as_int64(), -1); // outpoint unconfirmed
+    BOOST_REQUIRE(!history1.contains("spender_txhash"));
+    BOOST_REQUIRE(!history1.contains("spender_height"));
+}
+
 BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_subscribe__transaction_notify__found_spender_notification)
 {
     BOOST_REQUIRE(handshake(electrum::version::v1_7));
@@ -664,6 +705,7 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_subscribe__transaction_notify
     BOOST_REQUIRE_EQUAL(response2.at("result").as_object().at("funder_height").as_int64(), 1);
 
     BOOST_REQUIRE(query_.set(test::tx4));
+    BOOST_REQUIRE(test::pool_archived(query_, test::tx4));
     notify(node::chases::transaction{ query_.to_tx(test::tx4.hash(false)).value });
 
     const auto notification = receive();
@@ -684,6 +726,64 @@ BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_subscribe__transaction_notify
     BOOST_REQUIRE_EQUAL(history.at("funder_height").as_int64(), 1);
     BOOST_REQUIRE_EQUAL(history.at("spender_height").as_int64(), 0);
     BOOST_REQUIRE_EQUAL(history.at("spender_txhash").as_string(), hash4);
+}
+
+BOOST_AUTO_TEST_CASE(electrum__blockchain_outpoint_subscribe__popped_spender__unspent_notification)
+{
+    BOOST_REQUIRE(handshake(electrum::version::v1_7));
+
+    // Pop blocks 9-1 from default fixture.
+    query_.pop_confirmed(); // 9
+    query_.pop_confirmed(); // 8
+    query_.pop_confirmed(); // 7
+    query_.pop_confirmed(); // 6
+    query_.pop_confirmed(); // 5
+    query_.pop_confirmed(); // 4
+    query_.pop_confirmed(); // 3
+    query_.pop_confirmed(); // 2
+    query_.pop_confirmed(); // 1
+    BOOST_REQUIRE_EQUAL(query_.get_top_confirmed(), 0u);
+
+    BOOST_REQUIRE(query_.set(test::block1a, database::context{ 0, 1, 0 }, {}, false, false));
+    BOOST_REQUIRE(query_.set(test::block2a, database::context{ 0, 2, 0 }, {}, false, false));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::block1a.hash()), true));
+    BOOST_REQUIRE(query_.push_confirmed(query_.to_header(test::block2a.hash()), true));
+    const auto hash1 = encode_hash(test::block1a.transactions_ptr()->at(0)->hash(false));
+    const auto hash2 = encode_hash(test::block2a.transactions_ptr()->at(0)->hash(false));
+
+    // block1a tx0 output0 [confirmed 1], spent by block2a tx0 input0 [confirmed 2]
+    constexpr auto request = R"({{"id":1112,"method":"blockchain.outpoint.subscribe","params":["{}",0]}})" "\n";
+    const auto response = get(std::format(request, hash1));
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_object());
+
+    const auto& result = response.at("result").as_object();
+    BOOST_REQUIRE_EQUAL(result.at("funder_height").as_int64(), 1);
+    BOOST_REQUIRE_EQUAL(result.at("spender_height").as_int64(), 2);
+    BOOST_REQUIRE_EQUAL(result.at("spender_txhash").as_string(), hash2);
+
+    // The popped spender is not pooled (as with relay disabled), so it is not
+    // unconfirmed.
+    BOOST_REQUIRE(query_.pop_confirmed());
+
+    // Trigger node chaser event to electrum event subscriber.
+    notify(node::chases::organized{ 0 });
+
+    const auto notification = receive();
+    REQUIRE_NO_THROW_TRUE(notification.at("method").is_string());
+    REQUIRE_NO_THROW_TRUE(notification.at("params").is_array());
+    BOOST_REQUIRE_EQUAL(notification.at("method").as_string(), "blockchain.outpoint.subscribe");
+
+    const auto& params = notification.at("params").as_array();
+    BOOST_REQUIRE_EQUAL(params.size(), 3u);
+    BOOST_REQUIRE_EQUAL(params.at(0).as_string(), hash1);
+    BOOST_REQUIRE_EQUAL(params.at(1).as_int64(), 0);
+
+    // The outpoint is unspent.
+    const auto& status = params.at(2).as_object();
+    REQUIRE_NO_THROW_TRUE(status.at("funder_height").is_int64());
+    BOOST_REQUIRE_EQUAL(status.at("funder_height").as_int64(), 1);
+    BOOST_REQUIRE(!status.contains("spender_txhash"));
+    BOOST_REQUIRE(!status.contains("spender_height"));
 }
 
 // blockchain.outpoint.unsubscribe

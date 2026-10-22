@@ -238,6 +238,8 @@ protected:
         cursor_t cursor{};
         hash_digest status{};
         midstate accumulator{};
+        bool confirmed{};
+        bool reset{};
     };
 
     // Subscription to outpoint.
