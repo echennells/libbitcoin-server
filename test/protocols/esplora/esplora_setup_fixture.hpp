@@ -45,6 +45,8 @@ struct esplora_setup_fixture
     status post_status(std::string_view target, std::string_view body,
         boost::beast::http::field name, std::string_view value);
     std::string post_text(std::string_view target, std::string_view body);
+    std::string post_text(std::string_view target, std::string_view body,
+        boost::beast::http::field name, std::string_view value);
 
     network::boost_code ws_upgrade();
     system::data_chunk ws_receive();
