@@ -74,8 +74,10 @@ protected:
     virtual void send_job(mining_channel& channel, const job::cptr& job,
         bool clean) NOEXCEPT = 0;
 
-    /// Add or remove a mining channel of the connection (requires strand).
-    void add_channel(uint32_t id, const mining_channel::ptr& channel) NOEXCEPT;
+    /// Add or remove a mining channel of the connection, registering its
+    /// entry (service, transport, client and workers) (requires strand).
+    void add_channel(uint32_t id, const mining_channel::ptr& channel,
+        miners::channel&& entry) NOEXCEPT;
     void remove_channel(uint32_t id) NOEXCEPT;
 
     /// The mining channel of the identifier, empty if none (requires strand).
@@ -97,6 +99,10 @@ protected:
         const system::data_chunk& rolled, system::chain::header& out,
         code& ec) NOEXCEPT;
 
+    /// Record a share refused before it is checked (requires strand).
+    void reject_share(const mining_channel& channel,
+        const std::string& result) NOEXCEPT;
+
     /// Submit the block of an accepted share if it mines one, and retarget
     /// the channel (requires strand).
     void accept_share(mining_channel& channel, const job& job,
@@ -105,6 +111,9 @@ protected:
 
     /// Set the difficulty of the channel, at or above its floor.
     void suggest(mining_channel& channel, double difficulty) NOEXCEPT;
+
+    /// Issue the current job again at channel difficulty and a later time.
+    void refresh(mining_channel& channel) NOEXCEPT;
 
     /// Chase events (template replacement and submitted block completion).
     bool handle_chase(const code& ec,
@@ -132,12 +141,18 @@ private:
     void do_template(const code& ec,
         const node::block_template::cptr& held) NOEXCEPT;
     double floor(const mining_channel& channel) const NOEXCEPT;
-    void refresh(mining_channel& channel) NOEXCEPT;
     void retarget(mining_channel& channel) NOEXCEPT;
     void start_decay() NOEXCEPT;
     void handle_decay(const code& ec) NOEXCEPT;
-    void submit_mined(const system::chain::header& header, const job& job,
+    void submit_mined(const mining_channel& channel,
+        const system::chain::header& header, const job& job,
         const system::data_chunk& extranonce) NOEXCEPT;
+    share_outcome to_outcome(mining_channel& channel, const job& job,
+        uint32_t version, uint32_t timestamp, uint32_t nonce,
+        const system::data_chunk& rolled, system::chain::header& out,
+        code& ec) NOEXCEPT;
+    void record_share(const mining_channel& channel, const job& job,
+        const system::chain::header& header, share_outcome outcome) NOEXCEPT;
 
     // These are thread safe.
     const settings::mining_server& options_;
@@ -146,7 +161,8 @@ private:
 
     // These are protected by strand.
     std::unordered_map<uint32_t, mining_channel::ptr> channels_{};
-    std::unordered_map<system::hash_digest, size_t> mined_{};
+    std::unordered_map<system::hash_digest,
+        std::pair<size_t, std::string>> mined_{};
 };
 
 } // namespace server
